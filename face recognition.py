@@ -10,8 +10,8 @@ from insightface.app import FaceAnalysis
 print("Initializing InsightFace models...")
 try:
     face_app = FaceAnalysis(providers=['CPUExecutionProvider'])
-    face_app.prepare(ctx_id=0, det_size=(640, 640))
-    print("✓ InsightFace model initialized successfully")
+    face_app.prepare(ctx_id=0, det_size=(960 , 960), det_thresh=0.5)  # Adjust this for detection sensitivity
+    print("InsightFace model initialized successfully")
 except Exception as e:
     print(f"Error initializing InsightFace: {e}")
     face_app = None
@@ -89,9 +89,6 @@ def add_face(name, rrn, branch, image_path):
 # Initialize known students (add your student image files to the project directory)
 # Note: Make sure the image files exist in the same directory as this script
 add_face('yaseen', 1170, 'AI&DS', 'yaseen.jpg')  # This one works
-# Initialize known students (add your student image files to the project directory)
-# Note: Make sure the image files exist in the same directory as this script
-add_face('yaseen', 1170, 'AI&DS', 'yaseen.jpg')  # This one works
 # Add more students by uncommenting and modifying the lines below:
 # add_face('naveed', 1152, 'AI&DS', 'naveed.jpg')
 # add_face('hameed', 1145, 'AI&DS', 'hameed.jpg')
@@ -119,7 +116,7 @@ add_face('yaseen', 1170, 'AI&DS', 'yaseen.jpg')  # This one works
 
 # Face recognition configuration
 class ImageConfig:
-    ARCFACE_SIMILARITY_THRESHOLD = 0.4  # ArcFace cosine similarity threshold
+    ARCFACE_SIMILARITY_THRESHOLD = 0.2 # ArcFace cosine similarity threshold (lowered for better recognition)
     STANDARD_FACE_SIZE = (112, 112)  # ArcFace standard input size
 
 def recognize_face_from_frame(frame):
@@ -238,7 +235,7 @@ def upload_and_recognize_video():
     out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
     
     # Process every nth frame for faster processing (adjust as needed)
-    frame_skip = max(1, fps // 5)  # Process 5 frames per second
+    frame_skip = 2  # Process 2 frames per second
     frame_count = 0
     processed_frames = 0
     recognized_students = set()  # Keep track of recognized students
