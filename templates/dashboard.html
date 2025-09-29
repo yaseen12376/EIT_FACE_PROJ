@@ -1,0 +1,1268 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Faculty Dashboard | Smart Attendance System</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+<style>
+:root {
+    --primary-color: #6366f1;
+    --secondary-color: #8b5cf6;
+    --accent-color: #06b6d4;
+    --success-color: #10b981;
+    --warning-color: #f59e0b;
+    --danger-color: #ef4444;
+    --dark-color: #1f2937;
+    --light-gray: #f8fafc;
+    --body-bg: #f1f5f9;
+    --card-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+    --card-hover-shadow: 0 20px 40px rgba(0, 0, 0, 0.12);
+    --card-radius: 1.25rem;
+    --glass-effect: rgba(255, 255, 255, 0.95);
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body { 
+    background: var(--body-bg);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    margin: 0;
+    position: relative;
+}
+
+body::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: 
+        radial-gradient(circle at 20% 80%, rgba(99, 102, 241, 0.05) 0%, transparent 50%),
+        radial-gradient(circle at 80% 20%, rgba(139, 92, 246, 0.05) 0%, transparent 50%),
+        radial-gradient(circle at 40% 40%, rgba(6, 182, 212, 0.05) 0%, transparent 50%);
+    z-index: -1;
+    pointer-events: none;
+}
+
+/* Navbar */
+.navbar { 
+    background: var(--glass-effect) !important;
+    backdrop-filter: blur(20px);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    padding: 1rem 0;
+}
+
+.navbar-brand { 
+    font-weight: 800;
+    font-size: 1.75rem;
+    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.navbar-brand i {
+    font-size: 2.5rem;
+    background: linear-gradient(135deg, var(--primary-color), var(--accent-color));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+/* Sidebar */
+.sidebar { 
+    min-width: 300px; 
+    max-width: 300px; 
+    background: var(--glass-effect);
+    backdrop-filter: blur(20px);
+    min-height: calc(100vh - 80px);
+    box-shadow: 4px 0 20px rgba(0, 0, 0, 0.08);
+    border-right: 1px solid rgba(255, 255, 255, 0.2);
+    padding: 2.5rem 2rem !important;
+}
+
+.sidebar .nav-link {
+    color: var(--dark-color);
+    font-weight: 600;
+    font-size: 1.2rem;
+    padding: 1.5rem 2rem;
+    border-radius: 1.25rem;
+    margin-bottom: 1rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    border: 2px solid transparent;
+}
+
+.sidebar .nav-link::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(99, 102, 241, 0.1), transparent);
+    transition: left 0.5s;
+}
+
+.sidebar .nav-link:hover::before {
+    left: 100%;
+}
+
+.sidebar .nav-link i { 
+    margin-right: 1.5rem; 
+    width: 32px; 
+    text-align: center;
+    font-size: 2rem;
+    transition: transform 0.3s ease;
+}
+
+.sidebar .nav-link:hover {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.05));
+    color: var(--primary-color);
+    transform: translateX(10px);
+    border-color: rgba(99, 102, 241, 0.2);
+}
+
+.sidebar .nav-link:hover i {
+    transform: scale(1.3);
+}
+
+.sidebar .nav-link.active { 
+    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    color: white;
+    transform: translateX(10px);
+    box-shadow: 0 10px 30px rgba(99, 102, 241, 0.4);
+}
+
+.sidebar .nav-link.active i {
+    transform: scale(1.2);
+}
+
+/* Content */
+.content-area { 
+    padding: 3rem; 
+    width: calc(100% - 300px);
+    min-height: calc(100vh - 80px);
+}
+
+.page-header {
+    margin-bottom: 3rem;
+}
+
+.page-title {
+    font-size: 3rem;
+    font-weight: 800;
+    background: linear-gradient(135deg, var(--dark-color), var(--primary-color));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 0.75rem;
+}
+
+.page-subtitle {
+    font-size: 1.4rem;
+    color: #64748b;
+    font-weight: 500;
+}
+
+.card {
+    border: none;
+    border-radius: var(--card-radius);
+    box-shadow: var(--card-shadow);
+    margin-bottom: 3rem;
+    background: var(--glass-effect);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow: hidden;
+    position: relative;
+}
+
+.card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, var(--primary-color), var(--accent-color), var(--secondary-color));
+}
+
+.card:hover {
+    transform: translateY(-10px);
+    box-shadow: var(--card-hover-shadow);
+}
+
+.layout-wrapper {
+    min-height: calc(100vh - 80px);
+}
+
+.sidebar-overlay {
+    position: fixed;
+    top: 76px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(15, 23, 42, 0.35);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+    z-index: 900;
+}
+
+body.sidebar-open .sidebar-overlay {
+    opacity: 1;
+    pointer-events: all;
+}
+
+body.sidebar-open {
+    overflow: hidden;
+}
+
+/* Stat Cards */
+.stat-card {
+    height: 100%;
+    margin-bottom: 2rem;
+}
+
+.stat-card .card-body { 
+    display: flex; 
+    align-items: center;
+    padding: 3rem;
+    height: 100%;
+}
+
+/* Add extra spacing between sections */
+.row + .row {
+    margin-top: 2rem;
+}
+
+.page-header + .row {
+    margin-bottom: 2rem;
+}
+
+.stat-card .icon-circle {
+    width: 100px; 
+    height: 100px; 
+    border-radius: 50%;
+    display: flex; 
+    align-items: center; 
+    justify-content: center;
+    margin-right: 2.5rem; 
+    font-size: 3.5rem; 
+    color: white;
+    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.25);
+    position: relative;
+}
+
+.stat-card .icon-circle::before {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    background: inherit;
+    z-index: -1;
+    opacity: 0.3;
+    animation: pulse 2s infinite;
+}
+
+.stat-card h5 { 
+    font-size: 3.5rem; 
+    font-weight: 800;
+    margin-bottom: 0.75rem;
+    color: var(--dark-color);
+}
+
+.stat-card p {
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: #64748b;
+    margin: 0;
+}
+
+/* Camera Section */
+#cameraSection {
+    height: fit-content;
+}
+
+video { 
+    width: 100%; 
+    height: auto;
+    min-height: 350px;
+    border-radius: 1.25rem;
+    background: #e2e8f0;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+}
+
+canvas { 
+    display: none; 
+}
+
+#snapshotImg { 
+    max-width: 100%; 
+    border: 3px solid #e2e8f0;
+    border-radius: 1.25rem;
+    margin-top: 1.5rem;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+}
+
+#processingStatus { 
+    font-style: italic; 
+    color: #64748b;
+    min-height: 35px;
+    font-size: 1.2rem;
+    font-weight: 600;
+}
+
+.card-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--dark-color);
+}
+
+.card-title i {
+    font-size: 1.75rem;
+}
+
+/* Buttons */
+.btn {
+    font-weight: 700;
+    border-radius: 1rem;
+    padding: 1rem 2rem;
+    font-size: 1.1rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border: 2px solid transparent;
+    position: relative;
+    overflow: hidden;
+}
+
+.btn::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    transition: left 0.5s;
+}
+
+.btn:hover::before {
+    left: 100%;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    border: none;
+}
+
+.btn-primary:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 15px 35px rgba(99, 102, 241, 0.4);
+}
+
+.btn-outline-secondary {
+    border-color: #e2e8f0;
+    color: #64748b;
+    background: rgba(255, 255, 255, 0.8);
+}
+
+.btn-outline-secondary:hover {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    color: white;
+    transform: translateY(-3px);
+}
+
+.btn-outline-danger {
+    border-color: var(--danger-color);
+    color: var(--danger-color);
+    background: rgba(255, 255, 255, 0.8);
+}
+
+.btn-outline-danger:hover {
+    background: var(--danger-color);
+    border-color: var(--danger-color);
+    color: white;
+    transform: translateY(-3px);
+}
+
+/* Tables */
+.table {
+    border-radius: 1.25rem;
+    overflow: hidden;
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08);
+    background: white;
+}
+
+.table thead th {
+    background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+    font-weight: 700;
+    font-size: 1.1rem;
+    color: var(--dark-color);
+    border: none;
+    padding: 2rem 1.5rem;
+}
+
+.table tbody td {
+    padding: 1.5rem;
+    font-weight: 500;
+    border-color: #f1f5f9;
+    font-size: 1.05rem;
+}
+
+.table-hover tbody tr:hover {
+    background: rgba(99, 102, 241, 0.05);
+}
+
+/* Badges */
+.badge {
+    font-size: 1rem;
+    font-weight: 600;
+    padding: 0.75rem 1.25rem;
+    border-radius: 0.75rem;
+}
+
+/* Animations */
+@keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+    animation: fadeIn 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Empty state styling */
+.empty-state {
+    text-align: center;
+    padding: 3rem;
+    color: #94a3b8;
+}
+
+.empty-state i {
+    font-size: 4rem;
+    margin-bottom: 1.5rem;
+    opacity: 0.5;
+}
+
+/* Responsive Design */
+@media (max-width: 1200px) {
+    .content-area {
+        padding: 2.5rem;
+    }
+    
+    .stat-card .card-body {
+        padding: 2.5rem;
+    }
+    
+    .stat-card .icon-circle {
+        width: 80px;
+        height: 80px;
+        font-size: 2.5rem;
+    }
+    
+    .page-title {
+        font-size: 2.5rem;
+    }
+}
+
+@media (max-width: 992px) {
+    .layout-wrapper {
+        flex-direction: column;
+    }
+
+    .sidebar {
+        position: fixed;
+        top: 76px;
+        left: 0;
+        bottom: 0;
+        max-width: 280px;
+        min-width: 280px;
+        transform: translateX(-105%);
+        transition: transform 0.3s ease;
+        padding: 2rem 1.75rem !important;
+        box-shadow: 12px 0 40px rgba(15, 23, 42, 0.18);
+        border-right: none;
+        border-top-right-radius: 1.5rem;
+        border-bottom-right-radius: 1.5rem;
+        z-index: 1000;
+    }
+
+    body.sidebar-open .sidebar {
+        transform: translateX(0);
+    }
+
+    .sidebar .nav-link {
+        font-size: 1rem;
+        padding: 1.1rem 1.25rem;
+        margin-bottom: 0.75rem;
+    }
+
+    .sidebar .nav-link i {
+        font-size: 1.5rem;
+        margin-right: 1rem;
+    }
+
+    .navbar-brand {
+        font-size: 1.5rem;
+    }
+
+    .content-area {
+        width: 100%;
+        padding: 2rem 1.75rem 4rem;
+        min-height: auto;
+    }
+
+    .page-header {
+        text-align: center;
+    }
+
+    .page-title {
+        font-size: 2.2rem;
+    }
+
+    .page-subtitle {
+        font-size: 1.1rem;
+    }
+
+    .stat-card .card-body {
+        padding: 2.25rem;
+    }
+
+    .stat-card .icon-circle {
+        margin-right: 1.5rem;
+    }
+}
+
+@media (max-width: 768px) {
+    .navbar-brand {
+        font-size: 1.4rem;
+    }
+
+    .stat-card .card-body {
+        padding: 2rem;
+        flex-direction: column;
+        text-align: center;
+    }
+
+    .stat-card .icon-circle {
+        margin: 0 0 1.25rem;
+    }
+
+    .card {
+        margin-bottom: 2.5rem;
+    }
+
+    video {
+        min-height: 260px;
+        border-radius: 1rem;
+    }
+
+    .camera-controls {
+        flex-direction: column;
+    }
+
+    .camera-controls .btn {
+        width: 100%;
+    }
+
+    #processingStatus {
+        font-size: 1rem;
+    }
+
+    .table thead th {
+        font-size: 0.95rem;
+        padding: 1.25rem 1rem;
+    }
+
+    .table tbody td {
+        font-size: 0.95rem;
+        padding: 1.1rem 1rem;
+    }
+}
+
+@media (max-width: 576px) {
+    .content-area {
+        padding: 1.75rem 1.25rem 3.5rem;
+    }
+
+    .page-title {
+        font-size: 1.9rem;
+    }
+
+    .page-subtitle {
+        font-size: 1rem;
+    }
+
+    .stat-card h5 {
+        font-size: 2.5rem;
+    }
+
+    .stat-card p {
+        font-size: 1.05rem;
+    }
+
+    video {
+        min-height: 220px;
+    }
+
+    #snapshotImg {
+        margin-top: 1rem;
+    }
+
+    .btn {
+        padding: 0.85rem 1.5rem;
+        font-size: 1rem;
+    }
+
+    .badge {
+        padding: 0.6rem 1rem;
+        font-size: 0.9rem;
+    }
+
+    .table thead th,
+    .table tbody td {
+        white-space: nowrap;
+    }
+}
+</style>
+</head>
+
+<body>
+<nav class="navbar navbar-light bg-white">
+    <div class="container-fluid justify-content-between">
+        <div class="d-flex align-items-center gap-3">
+            <button class="btn btn-outline-secondary d-lg-none" id="sidebarToggle" type="button" aria-label="Toggle navigation">
+                <i class="fa-solid fa-bars"></i>
+            </button>
+            <a class="navbar-brand">
+                <i class="fa-solid fa-user-graduate me-3"></i>Smart Attendance
+            </a>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <button class="btn btn-outline-danger" onclick="logout()">
+                <i class="fa-solid fa-arrow-right-from-bracket me-2"></i> Logout
+            </button>
+        </div>
+    </div>
+</nav>
+
+<div id="sidebarOverlay" class="sidebar-overlay d-lg-none"></div>
+
+<div class="layout-wrapper d-flex">
+    <aside class="sidebar">
+        <ul class="nav flex-column">
+            <li class="nav-item">
+                <a class="nav-link active" data-view="dashboardView">
+                    <i class="fa-solid fa-chart-line"></i> Dashboard
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-view="attendanceView">
+                    <i class="fa-solid fa-calendar-check"></i> Attendance
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-view="reportsView">
+                    <i class="fa-solid fa-chart-pie"></i> Analytics
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-view="studentsView">
+                    <i class="fa-solid fa-users"></i> Students
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-view="settingsView">
+                    <i class="fa-solid fa-cog"></i> Settings
+                </a>
+            </li>
+        </ul>
+    </aside>
+    
+    <main class="content-area">
+        <div id="dashboardView" class="fade-in">
+            <div class="page-header">
+                <h1 class="page-title">Welcome Back, Professor!</h1>
+                <p class="page-subtitle">Here's your attendance overview for today's CSE-B (Data Structures) class</p>
+            </div>
+            
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="card stat-card">
+                        <div class="card-body">
+                            <div class="icon-circle bg-success">
+                                <i class="fa-solid fa-user-check"></i>
+                            </div>
+                            <div>
+                                <h5>54</h5>
+                                <p class="mb-0">Present Today</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card stat-card">
+                        <div class="card-body">
+                            <div class="icon-circle bg-danger">
+                                <i class="fa-solid fa-user-xmark"></i>
+                            </div>
+                            <div>
+                                <h5>6</h5>
+                                <p class="mb-0">Absentees</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card stat-card">
+                        <div class="card-body">
+                            <div class="icon-circle bg-warning text-dark">
+                                <i class="fa-solid fa-user-clock"></i>
+                            </div>
+                            <div>
+                                <h5>2</h5>
+                                <p class="mb-0">Late Entries</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Add extra spacing between sections -->
+            <div class="mb-5"></div>
+            
+            <div class="row g-4">
+                <div class="col-lg-7">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h5 class="card-title d-flex align-items-center">
+                                <i class="fa-solid fa-clock-rotate-left me-3" style="color: var(--primary-color);"></i>
+                                Live Attendance Log
+                            </h5>
+                            <p class="card-subtitle text-muted mb-4">Real-time attendance entries appear here automatically</p>
+                            <div class="table-responsive">
+                                <table class="table table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th><i class="fa-solid fa-user me-2"></i>Student Name</th>
+                                            <th><i class="fa-solid fa-id-card me-2"></i>ID</th>
+                                            <th><i class="fa-solid fa-clock me-2"></i>Time</th>
+                                            <th><i class="fa-solid fa-circle-check me-2"></i>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="attendanceLog">
+                                        <tr>
+                                            <td colspan="4" class="empty-state">
+                                                <i class="fa-solid fa-hourglass-half d-block"></i>
+                                                Waiting for attendance entries...
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-5">
+                    <div id="cameraSection" class="card h-100">
+                        <div class="card-body d-flex flex-column">
+                            <h5 class="card-title d-flex align-items-center">
+                                <i class="fa-solid fa-camera me-3" style="color: var(--accent-color);"></i>
+                                AI Face Recognition
+                            </h5>
+                            <div class="flex-grow-1 d-flex flex-column">
+                                <video id="video" autoplay playsinline class="mb-3"></video>
+                                <canvas id="canvas"></canvas>
+                                
+                                <div class="mt-auto">
+                                    <div class="d-flex gap-3 mb-3 camera-controls">
+                                        <button class="btn btn-primary flex-grow-1" id="captureBtn">
+                                            <i class="fa-solid fa-camera-retro me-2"></i>
+                                            Capture & Recognize
+                                        </button>
+                                        <button class="btn btn-outline-secondary" id="toggleStreamBtn" title="Toggle Camera">
+                                            <i class="fa-solid fa-power-off"></i>
+                                        </button>
+                                    </div>
+                                    
+                                    <div id="processingStatus" class="text-center mb-3"></div>
+                                    <div id="faceCounterDisplay" class="text-center mb-2" style="display: none;">
+                                        <small class="text-muted">
+                                            <i class="fa-solid fa-users me-1"></i>
+                                            <span id="faceCounter">0</span> face(s) detected
+                                        </small>
+                                    </div>
+                                    <img id="snapshotImg" style="display: none;">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="attendanceView" style="display: none;">
+            <div class="page-header">
+                <h1 class="page-title">Attendance Records</h1>
+                <p class="page-subtitle">View and manage historical attendance data for all classes</p>
+            </div>
+            
+            <div class="card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-4">
+                        <h5 class="card-title mb-0 d-flex align-items-center">
+                            <i class="fa-solid fa-table me-3" style="color: var(--primary-color);"></i>
+                            Attendance History
+                        </h5>
+                        <button class="btn btn-outline-primary">
+                            <i class="fa-solid fa-file-export me-2"></i>Export CSV
+                        </button>
+                    </div>
+                    
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Student Name</th>
+                                    <th>ID</th>
+                                    <th>Status</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>2025-09-17</td>
+                                    <td>John Doe</td>
+                                    <td>101</td>
+                                    <td><span class="badge bg-success">Present</span></td>
+                                    <td><button class="btn btn-sm btn-outline-secondary">Details</button></td>
+                                </tr>
+                                <tr>
+                                    <td>2025-09-17</td>
+                                    <td>Jane Smith</td>
+                                    <td>102</td>
+                                    <td><span class="badge bg-danger">Absent</span></td>
+                                    <td><button class="btn btn-sm btn-outline-secondary">Details</button></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="reportsView" style="display: none;">
+            <div class="page-header">
+                <h1 class="page-title">Analytics & Reports</h1>
+                <p class="page-subtitle">Visualize attendance trends and generate comprehensive reports</p>
+            </div>
+            
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title d-flex align-items-center">
+                        <i class="fa-solid fa-chart-line me-3" style="color: var(--accent-color);"></i>
+                        Attendance Trends
+                    </h5>
+                    <div class="empty-state" style="padding: 5rem;">
+                        <i class="fa-solid fa-chart-column"></i>
+                        <p class="mt-3">Chart visualization will be displayed here</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="studentsView" style="display: none;">
+            <div class="page-header">
+                <h1 class="page-title">Student Management</h1>
+                <p class="page-subtitle">Manage student roster and view individual attendance records</p>
+            </div>
+            
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title d-flex align-items-center">
+                        <i class="fa-solid fa-users me-3" style="color: var(--success-color);"></i>
+                        CSE-B Student Roster
+                    </h5>
+                    
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Student Name</th>
+                                    <th>ID</th>
+                                    <th>Email</th>
+                                    <th>Overall Attendance</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Yaseen </td>
+                                    <td>1170</td>
+                                    <td>yaseen@college.edu</td>
+                                    <td><span class="badge bg-success">95%</span></td>
+                                </tr>
+                                <tr>
+                                    <td>Naveed Khan</td>
+                                    <td>1152</td>
+                                    <td>naveed@college.edu</td>
+                                    <td><span class="badge bg-success">92%</span></td>
+                                </tr>
+                                <tr>
+                                    <td>Hameed Ali</td>
+                                    <td>1145</td>
+                                    <td>hameed@college.edu</td>
+                                    <td><span class="badge bg-warning">88%</span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="settingsView" style="display: none;">
+            <div class="page-header">
+                <h1 class="page-title">Settings</h1>
+                <p class="page-subtitle">Configure your application preferences and system settings</p>
+            </div>
+            
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title d-flex align-items-center">
+                        <i class="fa-solid fa-cog me-3" style="color: var(--warning-color);"></i>
+                        System Configuration
+                    </h5>
+                    
+                    <form>
+                        <div class="mb-4">
+                            <label class="form-label fw-bold">Default Camera</label>
+                            <select class="form-select">
+                                <option>Front Facing Camera</option>
+                                <option>Rear Facing Camera</option>
+                            </select>
+                        </div>
+                        <div class="mb-4">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" role="switch" id="emailNotifications" checked>
+                                <label class="form-check-label fw-bold" for="emailNotifications">
+                                    Enable Email Notifications for Low Attendance
+                                </label>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fa-solid fa-save me-2"></i>Save Settings
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // --- Camera and Dashboard Logic ---
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const snapshotImg = document.getElementById("snapshotImg");
+    const captureBtn = document.getElementById("captureBtn");
+    const toggleStreamBtn = document.getElementById("toggleStreamBtn");
+    const attendanceLog = document.getElementById("attendanceLog");
+    const processingStatus = document.getElementById("processingStatus");
+    const faceCounterDisplay = document.getElementById("faceCounterDisplay");
+    const faceCounter = document.getElementById("faceCounter");
+    const sidebarOverlay = document.getElementById('sidebarOverlay');
+    const sidebarToggle = document.getElementById('sidebarToggle');
+    let isVideoMirrored = false;
+    let currentStream = null;
+    let hasLogged = false;
+
+    function openSidebar() {
+        if (window.innerWidth < 992) {
+            document.body.classList.add('sidebar-open');
+        }
+    }
+
+    function closeSidebar() {
+        document.body.classList.remove('sidebar-open');
+    }
+
+    if (sidebarToggle) {
+        sidebarToggle.addEventListener('click', () => {
+            if (document.body.classList.contains('sidebar-open')) {
+                closeSidebar();
+            } else {
+                openSidebar();
+            }
+        });
+    }
+
+    if (sidebarOverlay) {
+        sidebarOverlay.addEventListener('click', closeSidebar);
+    }
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            closeSidebar();
+        }
+    });
+
+    async function startStream() {
+        try {
+            // Try to use back camera first, fallback to any camera if not available
+            let constraints = { video: { facingMode: 'environment' } };
+            try {
+                currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+            } catch (err) {
+                // Fallback to any available camera if back camera is not available
+                constraints = { video: true };
+                currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+            }
+            video.srcObject = currentStream;
+            const [videoTrack] = currentStream.getVideoTracks();
+            const settings = videoTrack ? videoTrack.getSettings() : {};
+            const label = videoTrack && videoTrack.label ? videoTrack.label.toLowerCase() : "";
+            isVideoMirrored = settings.facingMode === 'user' || /front|user|selfie/.test(label);
+            video.style.transform = isVideoMirrored ? "scaleX(-1)" : "scaleX(1)";
+            toggleStreamBtn.innerHTML = '<i class="fa-solid fa-power-off"></i>';
+            captureBtn.disabled = false;
+        } catch (err) {
+            alert("Error: Could not access the camera. Please grant permission and try again.");
+        }
+    }
+
+    function stopStream() {
+        if (currentStream) {
+            currentStream.getTracks().forEach(t => t.stop());
+            video.srcObject = null;
+            video.style.transform = "scaleX(1)";
+            toggleStreamBtn.innerHTML = '<i class="fa-solid fa-video"></i>';
+            captureBtn.disabled = true;
+        }
+    }
+
+    if (captureBtn) {
+        captureBtn.addEventListener("click", async () => {
+            try {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                const ctx = canvas.getContext("2d");
+                ctx.save();
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                if (isVideoMirrored) {
+                    ctx.scale(-1, 1);
+                    ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
+                } else {
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                }
+                ctx.restore();
+                const imageDataUrl = canvas.toDataURL("image/png");
+                snapshotImg.src = imageDataUrl;
+                snapshotImg.style.display = "block";
+                processingStatus.innerHTML = `Processing... <i class="fa-solid fa-brain fa-spin"></i>`;
+                captureBtn.disabled = true;
+
+                // Send image to backend for recognition
+                const formData = new FormData();
+                formData.append('image_data', imageDataUrl);
+
+                const response = await fetch('/capture-attendance', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+                
+                if (result.success && result.attendance_records.length > 0) {
+                    // Show face counter
+                    faceCounter.textContent = result.attendance_records.length;
+                    faceCounterDisplay.style.display = 'block';
+                    
+                    // Handle multiple faces detected
+                    let statusMessage = '';
+                    let detectedNames = [];
+                    
+                    if (result.attendance_records.length === 1) {
+                        // Single face detected
+                        const student = result.attendance_records[0];
+                        const confidence = Math.round((student.confidence || 0.8) * 100);
+                        statusMessage = `<i class="fa-solid fa-check-circle me-2"></i>Success! ${student.name} identified (${confidence}% confidence).`;
+                        detectedNames.push(student.name);
+                    } else {
+                        // Multiple faces detected
+                        statusMessage = `<i class="fa-solid fa-users me-2"></i>Success! ${result.attendance_records.length} students identified: `;
+                        const names = result.attendance_records.map(student => student.name);
+                        statusMessage += names.join(', ');
+                        detectedNames = names;
+                    }
+                    
+                    processingStatus.innerHTML = `<span class="text-success">${statusMessage}</span>`;
+                    
+                    // Add all detected students to attendance log
+                    result.attendance_records.forEach(student => {
+                        addAttendanceRecord(student.name, student.rrn, "Present", student.confidence);
+                    });
+                    
+                    // Show summary notification
+                    if (result.attendance_records.length > 1) {
+                        setTimeout(() => {
+                            processingStatus.innerHTML = `<span class="text-info"><i class="fa-solid fa-info-circle me-2"></i>Attendance marked for ${result.attendance_records.length} students.</span>`;
+                        }, 3000);
+                    }
+                } else {
+                    // Hide face counter for failed detections
+                    faceCounterDisplay.style.display = 'none';
+                    // Handle cases with no recognized faces or errors
+                    let errorMessage = '';
+                    let suggestion = '';
+                    
+                    if (result.results && result.results.length > 0) {
+                        const failedResult = result.results[0];
+                        
+                        if (failedResult.name === 'low_quality_detection') {
+                            if (failedResult.quality_assessment === 'poor_lighting') {
+                                errorMessage = 'Face(s) detected but image quality is poor.';
+                                suggestion = 'Try improving lighting or removing shadows.';
+                            } else if (failedResult.quality_assessment === 'too_distant') {
+                                errorMessage = 'Face(s) detected but too far away.';
+                                suggestion = 'Please move closer to the camera and try again.';
+                            } else {
+                                errorMessage = 'Face(s) detected but quality needs improvement.';
+                                suggestion = failedResult.suggestion || 'Try better lighting and move closer.';
+                            }
+                        } else if (failedResult.name === 'unknown') {
+                            errorMessage = 'Face(s) detected but not recognized.';
+                            suggestion = 'Make sure all students are registered in the system.';
+                        } else {
+                            errorMessage = 'Face(s) detected but recognition failed.';
+                            suggestion = 'Try again with better lighting and positioning.';
+                        }
+                    } else {
+                        errorMessage = 'No faces detected in the image.';
+                        suggestion = 'Make sure faces are clearly visible and well-lit.';
+                    }
+                    
+                    processingStatus.innerHTML = `
+                        <span class="text-warning">
+                            <i class="fa-solid fa-exclamation-triangle me-2"></i>${errorMessage}
+                            <br><small class="text-muted mt-1">${suggestion}</small>
+                        </span>
+                    `;
+                    addAttendanceRecord("Recognition Failed", "N/A", "Try Again");
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                processingStatus.innerHTML = `<span class="text-danger"><i class="fa-solid fa-exclamation-triangle me-2"></i>Error processing image. Please try again.</span>`;
+            } finally {
+                captureBtn.disabled = false;
+            }
+        });
+    }
+
+    if (toggleStreamBtn) {
+        toggleStreamBtn.addEventListener("click", () => {
+            if (video.srcObject) stopStream(); else startStream();
+        });
+    }
+    
+    function addAttendanceRecord(name, id, status, confidence) {
+        if (!hasLogged) {
+            attendanceLog.innerHTML = '';
+            hasLogged = true;
+        }
+        const newRow = document.createElement('tr');
+        const statusClass = status === 'Present' ? 'bg-success' : status === 'Try Again' ? 'bg-warning' : 'bg-danger';
+        
+        // Add confidence score if available
+        let confidenceDisplay = '';
+        if (confidence && status === 'Present') {
+            const confidencePercent = Math.round(confidence * 100);
+            confidenceDisplay = ` <small class="text-muted">(${confidencePercent}%)</small>`;
+        }
+        
+        newRow.innerHTML = `
+            <td>${name}${confidenceDisplay}</td>
+            <td>${id}</td>
+            <td>${new Date().toLocaleTimeString()}</td>
+            <td><span class="badge ${statusClass}">${status}</span></td>
+        `;
+        attendanceLog.prepend(newRow);
+        
+        // Add a slight highlight animation for new entries
+        newRow.style.backgroundColor = '#f8f9fa';
+        setTimeout(() => {
+            newRow.style.backgroundColor = '';
+        }, 2000);
+    }
+
+    window.logout = function() {
+        fetch('/logout', { method: 'POST' })
+            .then(() => {
+                window.location.href = "/login";
+            })
+            .catch((error) => {
+                console.error('Error:', error);
+                window.location.href = "/login";
+            });
+    }
+    
+    // --- Navigation Logic ---
+    const navLinks = document.querySelectorAll('.sidebar .nav-link');
+    const contentViews = document.querySelectorAll('.content-area > div');
+
+    navLinks.forEach(link => {
+        link.addEventListener('click', () => {
+            const viewId = link.getAttribute('data-view');
+
+            // Update active class on links
+            navLinks.forEach(nav => nav.classList.remove('active'));
+            link.classList.add('active');
+
+            // Show the correct view and hide others
+            contentViews.forEach(view => {
+                view.style.display = view.id === viewId ? 'block' : 'none';
+            });
+            
+            // Special handling for dashboard camera
+            if (viewId === 'dashboardView') {
+                if (!video.srcObject) { startStream(); }
+            } else {
+                if (video.srcObject) { stopStream(); }
+            }
+
+            if (window.innerWidth < 992) {
+                closeSidebar();
+            }
+        });
+    });
+
+    window.addEventListener('resize', () => {
+        if (window.innerWidth >= 992) {
+            document.body.classList.remove('sidebar-open');
+        }
+    });
+
+    // Start camera only when on the dashboard initially
+    startStream();
+});
+</script>
+</body>
+</html>
