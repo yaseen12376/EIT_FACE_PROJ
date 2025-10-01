@@ -10,7 +10,7 @@ from insightface.app import FaceAnalysis
 print("Initializing InsightFace models...")
 try:
     face_app = FaceAnalysis(providers=['CPUExecutionProvider'])
-    face_app.prepare(ctx_id=0, det_size=(960, 960), det_thresh=0.6)  # Optimized for faster processing
+    face_app.prepare(ctx_id=0, det_size=(960, 960), det_thresh=0.4)  # Lower threshold for better detection
     print("InsightFace model initialized successfully")
 except Exception as e:
     print(f"Error initializing InsightFace: {e}")
@@ -74,22 +74,119 @@ class Face:
             print(f"Error loading image {self.image}: {e}")
             return None
 
-def add_face(name, rrn, branch, image_path):
-    face = Face(name, rrn, branch, image_path)
-    face_data = face.face_upload()
-    if face_data:
-        encoding, name, rrn, branch = face_data
-        # Append the face encoding and details to the global list
-        known_face_encodings.append((encoding, name, rrn, branch))
-        print(f"Uploaded face for {name}")
+def add_face_from_folder(name, rrn, branch, folder_path=None):
+    """Load all images from a person's folder automatically"""
+    if folder_path is None:
+        folder_path = f"images/{name}"
+    
+    # Check if folder exists
+    if not os.path.exists(folder_path):
+        print(f"⚠️  Folder not found: {folder_path}")
+        print(f"💡 Please create folder and add 3-4 images of {name}")
+        return False
+    
+    # Get all image files from the folder
+    image_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff']
+    image_paths = []
+    
+    for file in os.listdir(folder_path):
+        if any(file.lower().endswith(ext) for ext in image_extensions):
+            image_paths.append(os.path.join(folder_path, file))
+    
+    if not image_paths:
+        print(f"⚠️  No images found in {folder_path}")
+        print(f"💡 Please add 3-4 photos of {name} to this folder")
+        return False
+    
+    print(f"📂 Loading {len(image_paths)} images for {name}...")
+    
+    encodings_for_person = []
+    successful_uploads = 0
+    
+    for i, image_path in enumerate(image_paths):
+        face = Face(name, rrn, branch, image_path)
+        face_data = face.face_upload()
+        if face_data:
+            encoding, _, _, _ = face_data
+            encodings_for_person.append(encoding)
+            successful_uploads += 1
+            print(f"  ✅ {os.path.basename(image_path)}")
+        else:
+            print(f"  ❌ {os.path.basename(image_path)} - failed to detect face")
+    
+    if encodings_for_person:
+        # Store all encodings for this person
+        known_face_encodings.append((encodings_for_person, name, rrn, branch))
+        print(f"✅ Successfully loaded {successful_uploads}/{len(image_paths)} images for {name}")
+        return True
     else:
-        print(f"Failed to upload face for {name}")
+        print(f"❌ Failed to load any faces for {name}")
+        return False
+
+def add_face(name, rrn, branch, image_paths):
+    """Add a person with multiple reference images for better recognition (legacy method)"""
+    if isinstance(image_paths, str):
+        image_paths = [image_paths]  # Convert single path to list
+    
+    encodings_for_person = []
+    successful_uploads = 0
+    
+    for i, image_path in enumerate(image_paths):
+        face = Face(name, rrn, branch, image_path)
+        face_data = face.face_upload()
+        if face_data:
+            encoding, _, _, _ = face_data
+            encodings_for_person.append(encoding)
+            successful_uploads += 1
+        else:
+            print(f"Failed to upload image {i+1} for {name}: {image_path}")
+    
+    if encodings_for_person:
+        # Store all encodings for this person
+        known_face_encodings.append((encodings_for_person, name, rrn, branch))
+        print(f"Uploaded {successful_uploads} face encoding(s) for {name}")
+    else:
+        print(f"Failed to upload any faces for {name}")
 
 
-# Initialize known students (add your student image files to the project directory)
-# Note: Make sure the image files exist in the same directory as this script
-add_face('yaseen', 1170, 'AI&DS', 'yaseen.jpg')
-add_face('sajjad', 1170, 'IT', 'sajjad.jpg')  # This one works
+# Initialize known students using organized folder structure
+# 📂 Folder Structure: images/student_name/ (contains 3-4 photos)
+print("\n📂 Loading student faces from organized folders...")
+print("=" * 50)
+
+# Load faces from folders (recommended method)
+students_loaded = 0
+total_students = 0
+
+# Current students (only include those with organized image folders)
+student_data = [
+    ('yaseen', 1170, 'AI&DS'),
+    ('sajjad', 1170, 'IT'),
+    # Add more students here: ('name', rrn, 'branch')
+    # ('naveed', 1152, 'AI&DS'),  # Uncomment when images folder is ready
+    # ('hameed', 1145, 'AI&DS'),  # Uncomment when images folder is ready
+]
+
+for name, rrn, branch in student_data:
+    total_students += 1
+    if add_face_from_folder(name, rrn, branch):
+        students_loaded += 1
+    print()  # Empty line for readability
+
+print(f"📊 Summary: {students_loaded}/{total_students} students loaded successfully")
+print("=" * 50)
+
+# 💡 To add a new student:
+# 1. Create folder: images/student_name/
+# 2. Add 3-4 photos to the folder
+# 3. Add entry to student_data list above
+
+# 🔄 Fallback: Load from individual files (if folders don't exist)
+if students_loaded == 0:
+    print("⚠️  No organized folders found. Using fallback method...")
+    # Uncomment and modify these lines if you have individual image files:
+    # add_face('yaseen', 1170, 'AI&DS', ['yaseen.jpg', 'yaseen_front.jpg'])
+    # add_face('sajjad', 1170, 'IT', ['sajjad.jpg', 'sajjad_front.jpg'])
 # Add more students by uncommenting and modifying the lines below:
 # add_face('naveed', 1152, 'AI&DS', 'naveed.jpg')
 # add_face('hameed', 1145, 'AI&DS', 'hameed.jpg')
@@ -117,10 +214,10 @@ add_face('sajjad', 1170, 'IT', 'sajjad.jpg')  # This one works
 
 # Face recognition configuration
 class ImageConfig:
-    ARCFACE_SIMILARITY_THRESHOLD = 0.4 # ArcFace cosine similarity threshold (lowered for better recognition)
+    ARCFACE_SIMILARITY_THRESHOLD = 0.3  # Aggressive threshold for better recognition
     STANDARD_FACE_SIZE = (112, 112)  # ArcFace standard input size
 
-def recognize_face_from_frame(frame):
+def recognize_face_from_frame(frame, debug=False):
     """Recognize faces in a single frame using InsightFace"""
     try:
         # Convert BGR to RGB for InsightFace
@@ -133,29 +230,50 @@ def recognize_face_from_frame(frame):
             
         faces = face_app.get(rgb_frame)
         
+        if debug:
+            print(f"\n[DEBUG] Detected {len(faces)} face(s) in frame")
+        
         results = []
         if faces:
-            for face in faces:
+            for i, face in enumerate(faces):
                 # Get face embedding
                 face_embedding = face.embedding
                 
                 # Calculate cosine similarities with known faces
                 similarities = []
-                for encoding, _, _, _ in known_face_encodings:
-                    # Cosine similarity for ArcFace embeddings
-                    similarity = np.dot(face_embedding, encoding) / (
-                        np.linalg.norm(face_embedding) * np.linalg.norm(encoding)
-                    )
-                    similarities.append(similarity)
+                similarity_details = []
+                for encodings_list, name, _, _ in known_face_encodings:
+                    # Calculate similarity with all encodings for this person
+                    person_similarities = []
+                    for encoding in encodings_list:
+                        similarity = np.dot(face_embedding, encoding) / (
+                            np.linalg.norm(face_embedding) * np.linalg.norm(encoding)
+                        )
+                        person_similarities.append(similarity)
+                    
+                    # Use the maximum similarity from all their reference images
+                    max_person_similarity = max(person_similarities)
+                    similarities.append(max_person_similarity)
+                    similarity_details.append((name, max_person_similarity))
                 
                 if similarities:
                     max_similarity_index = np.argmax(similarities)
                     max_similarity = similarities[max_similarity_index]
                     
+                    if debug:
+                        print(f"[DEBUG] Face {i+1} similarities:")
+                        for name, sim in similarity_details:
+                            print(f"  - {name}: {sim:.3f}")
+                        print(f"[DEBUG] Best match: {similarity_details[max_similarity_index][0]} ({max_similarity:.3f})")
+                        print(f"[DEBUG] Threshold: {ImageConfig.ARCFACE_SIMILARITY_THRESHOLD}")
+                    
                     # Check if similarity exceeds threshold
                     if max_similarity > ImageConfig.ARCFACE_SIMILARITY_THRESHOLD:
                         _, name, rrn, branch = known_face_encodings[max_similarity_index]
                         confidence = max_similarity
+                        
+                        if debug:
+                            print(f"[DEBUG] ✅ RECOGNIZED: {name}")
                         
                         results.append({
                             "name": name,
@@ -166,6 +284,9 @@ def recognize_face_from_frame(frame):
                             "similarity": float(max_similarity)
                         })
                     else:
+                        if debug:
+                            print(f"[DEBUG] ❌ UNKNOWN: Best similarity {max_similarity:.3f} below threshold {ImageConfig.ARCFACE_SIMILARITY_THRESHOLD}")
+                        
                         results.append({
                             "name": "unknown",
                             "rrn": None,
@@ -174,6 +295,8 @@ def recognize_face_from_frame(frame):
                             "bbox": face.bbox.astype(int).tolist(),
                             "similarity": float(max_similarity)
                         })
+        elif debug:
+            print("[DEBUG] No faces detected in this frame")
         
         return results
     except Exception as e:
@@ -221,7 +344,11 @@ def upload_and_recognize_video():
     
     # Check if we have any known faces loaded
     if not known_face_encodings:
-        print("Warning: No known faces loaded! Please add student images first.")
+        print("❌ No known faces loaded!")
+        print("💡 Please organize your images:")
+        print("   1. Create folders: images/student_name/")
+        print("   2. Add 3-4 photos per student")
+        print("   3. Run the system again")
         cap.release()
         return
     
@@ -264,8 +391,17 @@ def upload_and_recognize_video():
         if frame_count % frame_skip == 0:
             processed_frames += 1
             
+            # Only show detection summary, not detailed debug info
+            debug_mode = False  # Disabled verbose debugging
+            
             # Recognize faces in current frame
-            results = recognize_face_from_frame(frame)
+            results = recognize_face_from_frame(frame, debug=debug_mode)
+            
+            # Simple detection summary (only when faces are found)
+            if results:
+                detected_names = [r['name'] for r in results if r['name'] != 'unknown']
+                if detected_names:
+                    print(f"✅ Frame {processed_frames}: Detected {', '.join(detected_names)}")
             
             # Draw bounding boxes and labels
             for result in results:
@@ -299,16 +435,11 @@ def upload_and_recognize_video():
         # Write frame to output video
         out.write(frame)
         
-        # Show progress every 10% or every 2 seconds of processing
-        if frame_count % (fps * 2) == 0 or frame_count % (total_frames // 10) == 0:
+        # Show simple progress every 25%
+        if frame_count % (total_frames // 4) == 0 and frame_count > 0:
             progress = (frame_count / total_frames) * 100
             elapsed_time = time.time() - start_time
-            if progress > 0:
-                estimated_total = elapsed_time / (progress / 100)
-                remaining_time = estimated_total - elapsed_time
-                print(f"Progress: {progress:.1f}% | Elapsed: {elapsed_time:.1f}s | ETA: {remaining_time:.1f}s | Analyzed: {processed_frames} frames")
-            else:
-                print(f"Progress: {progress:.1f}% | Processed frames: {processed_frames}")
+            print(f"📊 {progress:.0f}% complete - {processed_frames} frames analyzed")
     
     # Release everything
     cap.release()
