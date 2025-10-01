@@ -14,7 +14,7 @@ class CCTVAttendanceConfig:
     
     # Detection optimizations for CCTV processing
     DETECTION_SIZE = (960, 960)        # Balanced for CCTV quality
-    DETECTION_THRESHOLD = 0.6          # Higher threshold for CCTV noise reduction
+    DETECTION_THRESHOLD = 0.3          # Lower threshold for better face detection
     
     # Recognition optimizations
     SIMILARITY_THRESHOLD = 0.28        # Slightly higher for CCTV conditions
@@ -25,7 +25,7 @@ class CCTVAttendanceConfig:
     PROCESS_EVERY_N_FRAMES = 2        # Process every 2nd frame for CCTV
     
     # CCTV-specific settings
-    RECOGNITION_COOLDOWN = 10.0       # Longer cooldown for CCTV (10 seconds)
+    RECOGNITION_COOLDOWN = 5.0       # Longer cooldown for CCTV (10 seconds)
     MIN_CONSECUTIVE_DETECTIONS = 2    # Fewer detections needed for CCTV
     CONNECTION_RETRY_INTERVAL = 5.0   # Retry connection every 5 seconds
     

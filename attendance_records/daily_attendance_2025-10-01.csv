@@ -1,0 +1,7 @@
+Name,Employee_ID,Department,Date,Time,Full_Timestamp,Screenshot_Path,Source
+yaseen,1170,AI&DS,2025-10-01,15:56:03,2025-10-01 15:56:03,attendance_records\attendance_yaseen_2025-10-01_15-56-03_1.jpg,CCTV
+sajj,9876,AI&DS,2025-10-01,15:56:37,2025-10-01 15:56:37,attendance_records\attendance_sajj_2025-10-01_15-56-37_2.jpg,CCTV
+yaseen,1170,AI&DS,2025-10-01,15:58:56,2025-10-01 15:58:56,attendance_records\attendance_yaseen_2025-10-01_15-58-56_1.jpg,CCTV
+yaseen,1170,AI&DS,2025-10-01,15:59:29,2025-10-01 15:59:29,attendance_records\attendance_yaseen_2025-10-01_15-59-29_2.jpg,CCTV
+yaseen,1170,AI&DS,2025-10-01,15:59:32,2025-10-01 15:59:32,attendance_records\attendance_yaseen_2025-10-01_15-59-32_3.jpg,CCTV
+sajj,9876,AI&DS,2025-10-01,15:59:58,2025-10-01 15:59:58,attendance_records\attendance_sajj_2025-10-01_15-59-58_4.jpg,CCTV
