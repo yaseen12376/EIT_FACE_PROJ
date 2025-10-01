@@ -10,7 +10,7 @@ from insightface.app import FaceAnalysis
 print("Initializing InsightFace models...")
 try:
     face_app = FaceAnalysis(providers=['CPUExecutionProvider'])
-    face_app.prepare(ctx_id=0, det_size=(960 , 960), det_thresh=0.5)  # Adjust this for detection sensitivity
+    face_app.prepare(ctx_id=0, det_size=(960, 960), det_thresh=0.6)  # Optimized for faster processing
     print("InsightFace model initialized successfully")
 except Exception as e:
     print(f"Error initializing InsightFace: {e}")
@@ -88,7 +88,8 @@ def add_face(name, rrn, branch, image_path):
 
 # Initialize known students (add your student image files to the project directory)
 # Note: Make sure the image files exist in the same directory as this script
-add_face('yaseen', 1170, 'AI&DS', 'yaseen.jpg')  # This one works
+add_face('yaseen', 1170, 'AI&DS', 'yaseen.jpg')
+add_face('sajjad', 1170, 'IT', 'sajjad.jpg')  # This one works
 # Add more students by uncommenting and modifying the lines below:
 # add_face('naveed', 1152, 'AI&DS', 'naveed.jpg')
 # add_face('hameed', 1145, 'AI&DS', 'hameed.jpg')
@@ -116,7 +117,7 @@ add_face('yaseen', 1170, 'AI&DS', 'yaseen.jpg')  # This one works
 
 # Face recognition configuration
 class ImageConfig:
-    ARCFACE_SIMILARITY_THRESHOLD = 0.2 # ArcFace cosine similarity threshold (lowered for better recognition)
+    ARCFACE_SIMILARITY_THRESHOLD = 0.4 # ArcFace cosine similarity threshold (lowered for better recognition)
     STANDARD_FACE_SIZE = (112, 112)  # ArcFace standard input size
 
 def recognize_face_from_frame(frame):
@@ -234,14 +235,23 @@ def upload_and_recognize_video():
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
     
-    # Process every nth frame for faster processing (adjust as needed)
-    frame_skip = 2  # Process 2 frames per second
+    # Dynamic frame skip based on video duration for optimal speed
+    if duration <= 30:  # Short videos (≤30 seconds)
+        frame_skip = fps // 4  # Process 4 frames per second
+    elif duration <= 120:  # Medium videos (≤2 minutes)
+        frame_skip = fps // 2  # Process 2 frames per second
+    else:  # Long videos (>2 minutes)
+        frame_skip = fps  # Process 1 frame every second
+
     frame_count = 0
     processed_frames = 0
     recognized_students = set()  # Keep track of recognized students
     recognition_count = {}  # Count how many times each student is recognized
+    start_time = time.time()
     
-    print(f"Processing every {frame_skip} frame(s) for efficiency...")
+    print(f"Optimized processing: analyzing 1 frame every {frame_skip/fps:.1f} second(s)")
+    print(f"Estimated processing time: {(total_frames / frame_skip * 0.1):.1f} seconds")
+    print("Processing frames...")
     
     while True:
         ret, frame = cap.read()
@@ -289,19 +299,28 @@ def upload_and_recognize_video():
         # Write frame to output video
         out.write(frame)
         
-        # Show progress every 5 seconds
-        if frame_count % (fps * 5) == 0:
+        # Show progress every 10% or every 2 seconds of processing
+        if frame_count % (fps * 2) == 0 or frame_count % (total_frames // 10) == 0:
             progress = (frame_count / total_frames) * 100
-            print(f"Progress: {progress:.1f}% - Frame {frame_count}/{total_frames}")
+            elapsed_time = time.time() - start_time
+            if progress > 0:
+                estimated_total = elapsed_time / (progress / 100)
+                remaining_time = estimated_total - elapsed_time
+                print(f"Progress: {progress:.1f}% | Elapsed: {elapsed_time:.1f}s | ETA: {remaining_time:.1f}s | Analyzed: {processed_frames} frames")
+            else:
+                print(f"Progress: {progress:.1f}% | Processed frames: {processed_frames}")
     
     # Release everything
     cap.release()
     out.release()
     
+    total_processing_time = time.time() - start_time
     print(f"\n=== Processing Completed ===")
     print(f"Output video saved: {output_path}")
-    print(f"Total frames processed: {frame_count}")
-    print(f"Frames analyzed for faces: {processed_frames}")
+    print(f"Total processing time: {total_processing_time:.2f} seconds")
+    print(f"Video frames: {frame_count}/{total_frames} ({(frame_count/total_frames)*100:.1f}%)")
+    print(f"Analyzed frames: {processed_frames} (every {frame_skip/fps:.1f} seconds)")
+    print(f"Processing speed: {frame_count/total_processing_time:.1f} fps")
     
     if recognized_students:
         print(f"\n=== Recognition Results ===")
