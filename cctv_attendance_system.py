@@ -7,6 +7,9 @@ import sys
 import urllib.request
 from insightface.app import FaceAnalysis
 from tkinter import Tk, messagebox
+from datetime import datetime, timedelta
+import pandas as pd
+from collections import defaultdict
 
 # Import optional libraries for different models
 try:
@@ -45,9 +48,9 @@ class CCTVAttendanceConfig:
     MODEL_CONFIGS = {
         "balanced": {
             "detection_confidence": 0.6,  # Balanced confidence for SCRFD
-            "similarity_threshold": 0.3,  # Balanced threshold for accuracy
+            "similarity_threshold": 0.25,  # Balanced threshold for accuracy
             "process_every_n_frames": 2,  # Good balance of speed and accuracy
-            "frame_resize_factor": 0.75,  # Balanced resolution
+            "frame_resize_factor": 0.9,  # Balanced resolution
             "max_faces_per_frame": 3,     # Moderate face limit
             "detection_size": (640, 640)  # Optimized size for SCRFD
         },
@@ -73,9 +76,15 @@ class CCTVAttendanceConfig:
     PROCESS_EVERY_N_FRAMES = 2        # Process every 2nd frame for CCTV
     
     # CCTV-specific settings
-    RECOGNITION_COOLDOWN = 5.0       # Longer cooldown for CCTV (10 seconds)
+    RECOGNITION_COOLDOWN = 60.0       # 1 minute cooldown for testing (was 300.0 = 5 minutes)
     MIN_CONSECUTIVE_DETECTIONS = 2    # Fewer detections needed for CCTV
     CONNECTION_RETRY_INTERVAL = 5.0   # Retry connection every 5 seconds
+    
+    # Single-Camera Session Management
+    ENABLE_SESSION_MANAGEMENT = True  # Track check-in/check-out status
+    AUTO_CHECKOUT_TIME = "18:00"       # Automatic checkout time (6 PM)
+    MANUAL_CHECKOUT_ENABLED = True     # Allow manual checkout via keyboard
+    SESSION_TIMEOUT_HOURS = 8          # Max session length before auto-checkout
     
     # Display settings for CCTV monitoring
     DISPLAY_WIDTH = 1280
@@ -141,15 +150,25 @@ class SCRFDDetector:
         model_path = os.path.join(model_dir, "scrfd_2.5g.onnx")
         
         if not os.path.exists(model_path):
-            print("📥 Downloading SCRFD model (this may take a few minutes)...")
-            try:
-                # SCRFD 2.5G model URL (balanced version)
-                model_url = "https://github.com/deepinsight/insightface/releases/download/v0.7/scrfd_2.5g.onnx"
-                urllib.request.urlretrieve(model_url, model_path)
-                print(f"✓ SCRFD model downloaded to {model_path}")
-            except Exception as e:
-                print(f"❌ Failed to download SCRFD model: {e}")
-                return None
+            print("📥 SCRFD model not found. Checking for manual installation...")
+            print("\n" + "="*60)
+            print("📦 SCRFD MODEL SETUP REQUIRED")
+            print("="*60)
+            print("The SCRFD model needs to be downloaded manually.")
+            print("Please follow these steps:")
+            print("\n1. Download the SCRFD model from:")
+            print("   https://github.com/deepinsight/insightface/tree/master/detection/scrfd")
+            print("   OR search for 'scrfd_2.5g.onnx' online")
+            print("\n2. Place the downloaded 'scrfd_2.5g.onnx' file in:")
+            print(f"   {os.path.abspath(model_dir)}/")
+            print("\n3. Restart the program")
+            print("\n💡 Alternative: Use RetinaFace or InsightFace which work without manual setup")
+            print("="*60)
+            
+            # Try a simplified approach with a different model
+            print("\n🔄 Attempting to use a simplified balanced approach...")
+            print("⚠️ SCRFD model unavailable - falling back to InsightFace with optimizations")
+            return None
         
         return model_path
     
@@ -165,12 +184,20 @@ class SCRFDDetector:
             # Resize to model input size
             resized = cv2.resize(image, self.input_size)
             
-            # Normalize and prepare input
-            input_blob = cv2.dnn.blobFromImage(resized, 1.0/128.0, self.input_size, (127.5, 127.5, 127.5), swapRB=True)
+            # Convert BGR to RGB if needed
+            if len(resized.shape) == 3:
+                resized = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+            
+            # Normalize to [0, 1] and convert to CHW format
+            input_tensor = resized.astype(np.float32) / 255.0
+            input_tensor = np.transpose(input_tensor, (2, 0, 1))  # HWC to CHW
+            input_tensor = np.expand_dims(input_tensor, axis=0)   # Add batch dimension
+            
+            print(f"🔍 DEBUG: SCRFD input shape: {input_tensor.shape}")
             
             # Run inference
             input_name = self.session.get_inputs()[0].name
-            outputs = self.session.run(None, {input_name: input_blob})
+            outputs = self.session.run(None, {input_name: input_tensor})
             
             # Parse outputs and get detections
             detections = self._parse_outputs(outputs, original_width, original_height)
@@ -179,6 +206,8 @@ class SCRFDDetector:
             
         except Exception as e:
             print(f"❌ SCRFD detection error: {e}")
+            import traceback
+            traceback.print_exc()
             return []
     
     def _parse_outputs(self, outputs, original_width, original_height):
@@ -186,40 +215,53 @@ class SCRFDDetector:
         detections = []
         
         try:
-            # SCRFD typically outputs [scores, bboxes, landmarks]
-            if len(outputs) >= 2:
-                scores = outputs[0]
-                bboxes = outputs[1]
+            # SCRFD outputs multiple scales - check actual output structure
+            print(f"🔍 DEBUG: SCRFD outputs count: {len(outputs)}")
+            
+            # SCRFD typically has multiple output layers for different scales
+            # Each output contains [batch, num_anchors, 5] where 5 = [x1,y1,x2,y2,score]
+            for i, output in enumerate(outputs):
+                print(f"🔍 DEBUG: Output {i} shape: {output.shape}")
+                
+                # Skip if output doesn't have expected dimensions
+                if len(output.shape) != 3 or output.shape[2] < 5:
+                    continue
                 
                 # Scale factors
                 scale_x = original_width / self.input_size[0]
                 scale_y = original_height / self.input_size[1]
                 
-                for i in range(scores.shape[1]):
-                    confidence = float(scores[0, i, 1])  # Class 1 is face
+                # Process each detection in this output layer
+                for j in range(output.shape[1]):
+                    # Extract confidence (last element)
+                    confidence = float(output[0, j, 4])  # Score is at index 4
                     
                     if confidence > self.confidence_threshold:
-                        # Extract and scale bbox
-                        x1 = int(bboxes[0, i, 0] * scale_x)
-                        y1 = int(bboxes[0, i, 1] * scale_y)
-                        x2 = int(bboxes[0, i, 2] * scale_x)
-                        y2 = int(bboxes[0, i, 3] * scale_y)
+                        # Extract bbox coordinates (first 4 elements)
+                        x1 = int(output[0, j, 0] * scale_x)
+                        y1 = int(output[0, j, 1] * scale_y)
+                        x2 = int(output[0, j, 2] * scale_x)
+                        y2 = int(output[0, j, 3] * scale_y)
                         
                         # Validate bbox
-                        if x2 > x1 and y2 > y1:
+                        if x2 > x1 and y2 > y1 and x1 >= 0 and y1 >= 0:
                             detections.append({
                                 'bbox': [x1, y1, x2, y2],
                                 'confidence': confidence
                             })
             
+            print(f"🔍 DEBUG: SCRFD raw detections: {len(detections)}")
+            
             # Apply Non-Maximum Suppression
             if detections:
                 detections = self._apply_nms(detections)
+                print(f"🔍 DEBUG: SCRFD after NMS: {len(detections)}")
             
             return detections
             
         except Exception as e:
             print(f"❌ SCRFD output parsing error: {e}")
+            print(f"🔍 DEBUG: Available outputs: {[out.shape for out in outputs]}")
             return []
     
     def _apply_nms(self, detections):
@@ -236,16 +278,31 @@ class SCRFDDetector:
             boxes_xywh[:, 2] = boxes[:, 2] - boxes[:, 0]  # width
             boxes_xywh[:, 3] = boxes[:, 3] - boxes[:, 1]  # height
             
+            # Ensure positive dimensions
+            valid_indices = (boxes_xywh[:, 2] > 0) & (boxes_xywh[:, 3] > 0)
+            if not np.any(valid_indices):
+                return []
+            
+            boxes_xywh = boxes_xywh[valid_indices]
+            scores = scores[valid_indices]
+            valid_detections = [detections[i] for i in range(len(detections)) if valid_indices[i]]
+            
             # Apply NMS
             indices = cv2.dnn.NMSBoxes(boxes_xywh.tolist(), scores.tolist(), 
                                      self.confidence_threshold, self.nms_threshold)
             
             if len(indices) > 0:
-                indices = indices.flatten()
-                return [detections[i] for i in indices]
+                if isinstance(indices, np.ndarray):
+                    indices = indices.flatten()
+                elif isinstance(indices, list):
+                    indices = [idx[0] if isinstance(idx, list) else idx for idx in indices]
+                
+                return [valid_detections[i] for i in indices]
             
         except Exception as e:
             print(f"❌ NMS error: {e}")
+            # Return original detections if NMS fails
+            return detections[:5]  # Limit to top 5 to avoid too many false positives
         
         return detections
 
@@ -289,15 +346,21 @@ def initialize_face_model():
                 print("✅ InsightFace fallback initialized successfully")
             
         elif model_type == "balanced" and ONNX_AVAILABLE:
-            # Initialize SCRFD balanced model
+            # Initialize optimized InsightFace for balanced performance (SCRFD alternative)
             try:
-                print("📥 Loading SCRFD model (may download on first use)...")
-                balanced_detector = SCRFDDetector()
+                print("📥 Loading Balanced model (optimized InsightFace)...")
+                # Instead of SCRFD, use InsightFace with balanced settings
+                face_app = FaceAnalysis(providers=['CPUExecutionProvider'])
+                # Use smaller detection size for better speed
+                balanced_det_size = CCTVAttendanceConfig.MODEL_CONFIGS["balanced"]["detection_size"]
+                face_app.prepare(ctx_id=0, 
+                                det_size=balanced_det_size,
+                                det_thresh=0.5)  # Higher threshold for speed
                 active_model = "balanced"
-                print("✅ SCRFD Balanced model initialized successfully!")
+                print("✅ Balanced model (optimized InsightFace) initialized successfully!")
                 print("🚀 Ready for optimal balance of speed and accuracy")
-            except Exception as scrfd_error:
-                print(f"❌ SCRFD initialization failed: {scrfd_error}")
+            except Exception as balanced_error:
+                print(f"❌ Balanced model initialization failed: {balanced_error}")
                 print("🔄 Falling back to InsightFace...")
                 # Fall back to InsightFace
                 face_app = FaceAnalysis(providers=['CPUExecutionProvider'])
@@ -452,6 +515,16 @@ consecutive_detections = {}     # Track consecutive detections for confirmation
 today_attendance = set()        # Track who attended today
 screenshot_counter = 0          # Counter for screenshot naming
 
+# Enhanced Time Tracking Variables
+employee_time_entries = defaultdict(list)  # Store all time entries for each employee
+employee_work_sessions = defaultdict(list)  # Store calculated work sessions
+time_tracking_enabled = True
+
+# Single-Camera Session Management
+employee_checked_in_status = {}    # Track who is currently checked in
+employee_last_checkout = {}        # Track last checkout time for each employee
+manual_checkout_queue = set()      # Queue for manual checkouts
+
 class Employee:
     def __init__(self, name, employee_id, department, image_path):
         self.name = name
@@ -544,27 +617,14 @@ class Employee:
                     print(f"RetinaFace processing error: {retina_error}")
                     
             elif active_model == "balanced":
-                # Use SCRFD for detection and InsightFace for recognition
+                # Use optimized InsightFace for balanced enrollment
                 try:
-                    detections = balanced_detector.detect_faces(img_rgb)
-                    if detections:
-                        # Get the best detection
-                        best_detection = max(detections, key=lambda x: x['confidence'])
-                        x1, y1, x2, y2 = best_detection['bbox']
-                        
-                        # Extract face region
-                        face_region = img_rgb[y1:y2, x1:x2]
-                        if face_region.size > 0:
-                            # Use InsightFace for embedding generation
-                            if face_app is None:
-                                # Initialize InsightFace for embedding if not already done
-                                from insightface.app import FaceAnalysis
-                                face_app = FaceAnalysis(providers=['CPUExecutionProvider'])
-                                face_app.prepare(ctx_id=0, det_size=(640, 640))
-                            
-                            faces = face_app.get(face_region)
-                            if faces and len(faces) > 0:
-                                return faces[0].embedding, self.name, self.employee_id, self.department
+                    faces = face_app.get(img_rgb)
+                    if faces and len(faces) > 0:
+                        # Get the best face (highest detection score)
+                        best_face = max(faces, key=lambda x: x.det_score)
+                        print(f"✓ Balanced model detected face with score: {best_face.det_score:.3f}")
+                        return best_face.embedding, self.name, self.employee_id, self.department
                 except Exception as balanced_error:
                     print(f"Balanced model processing error: {balanced_error}")
                     
@@ -780,55 +840,24 @@ def recognize_faces_cctv(frame):
                 print(f"❌ RetinaFace detection error: {e}")
                 
         elif active_model == "balanced":
-            # Use SCRFD for balanced detection and InsightFace for recognition
-            detections = balanced_detector.detect_faces(rgb_frame)
+            # Use optimized InsightFace for balanced performance
+            faces = face_app.get(rgb_frame)
+            
+            # Debug output for balanced detection
+            if recognize_faces_cctv.debug_counter % 100 == 1:
+                print(f"🔍 DEBUG: Balanced (Optimized InsightFace) detected {len(faces)} faces")
+            
+            # Apply balanced model optimizations
+            if len(faces) > CCTVAttendanceConfig.MAX_FACES_PER_FRAME:
+                # Sort by detection score and keep top faces
+                faces = sorted(faces, key=lambda x: x.det_score, reverse=True)[:CCTVAttendanceConfig.MAX_FACES_PER_FRAME]
+            
+            # Filter faces by confidence for balanced performance
+            balanced_threshold = CCTVAttendanceConfig.MODEL_CONFIGS["balanced"]["detection_confidence"]
+            faces = [face for face in faces if face.det_score > balanced_threshold]
             
             if recognize_faces_cctv.debug_counter % 100 == 1:
-                print(f"🔍 DEBUG: SCRFD Balanced detected {len(detections)} faces")
-            
-            if detections:
-                # Sort by confidence and take top faces
-                detections = sorted(detections, key=lambda x: x['confidence'], reverse=True)
-                detections = detections[:CCTVAttendanceConfig.MAX_FACES_PER_FRAME]
-                
-                for detection in detections:
-                    x1, y1, x2, y2 = detection['bbox']
-                    confidence = detection['confidence']
-                    
-                    # Validate face size and position
-                    face_w, face_h = x2 - x1, y2 - y1
-                    if face_w < 40 or face_h < 40 or face_w > 300 or face_h > 300:
-                        continue
-                    
-                    aspect_ratio = face_w / face_h
-                    if aspect_ratio < 0.6 or aspect_ratio > 1.5:
-                        continue
-                    
-                    face_boxes.append([x1, y1, x2, y2])
-                    
-                    # Extract face region for recognition
-                    face_roi = rgb_frame[y1:y2, x1:x2]
-                    if face_roi.size > 0:
-                        try:
-                            # Use InsightFace for embedding generation
-                            if face_app is None:
-                                # Initialize InsightFace for embedding if not already done
-                                from insightface.app import FaceAnalysis
-                                face_app = FaceAnalysis(providers=['CPUExecutionProvider'])
-                                face_app.prepare(ctx_id=0, det_size=(640, 640))
-                            
-                            faces = face_app.get(face_roi)
-                            if faces and len(faces) > 0:
-                                face_embeddings.append(faces[0].embedding)
-                            else:
-                                # Remove invalid bbox if no face found
-                                if [x1, y1, x2, y2] in face_boxes:
-                                    face_boxes.remove([x1, y1, x2, y2])
-                                    face_boxes.remove([x1, y1, x2, y2])
-                        except Exception as balanced_error:
-                            print(f"❌ Balanced model embedding error: {balanced_error}")
-                            if [x1, y1, x2, y2] in face_boxes:
-                                face_boxes.remove([x1, y1, x2, y2])
+                print(f"🔍 DEBUG: Balanced model after filtering: {len(faces)} faces (threshold: {balanced_threshold})")
                 
         elif active_model == "insightface":
             # Original InsightFace implementation
@@ -857,7 +886,7 @@ def recognize_faces_cctv(frame):
                 print(f"🔍 DEBUG: Known encoding sizes: {[len(enc) for enc, _, _, _ in known_face_encodings]}")
         
         # Process faces based on active model
-        if active_model == "insightface" and faces and known_face_encodings:
+        if active_model in ["insightface", "balanced"] and faces and known_face_encodings:
             # Original InsightFace processing
             known_encodings = np.array([enc for enc, _, _, _ in known_face_encodings], dtype=np.float32)
             known_norms = known_encodings / np.linalg.norm(known_encodings, axis=1, keepdims=True)
@@ -1018,9 +1047,14 @@ def recognize_faces_cctv(frame):
                 
                 
 def process_recognition(name, emp_id, dept, current_time, frame, bbox):
-    """Helper function to process recognition and attendance marking"""
+    """Enhanced recognition processing with single-camera session management"""
+    global employee_checked_in_status, employee_last_checkout
+    
     try:
-        # Check cooldown period (longer for CCTV)
+        # Check if employee is currently checked in
+        is_checked_in = employee_checked_in_status.get(name, False)
+        
+        # Check cooldown period (1 minute for single-camera testing)
         if name not in last_recognition_time or \
            (current_time - last_recognition_time[name]) > CCTVAttendanceConfig.RECOGNITION_COOLDOWN:
             
@@ -1029,29 +1063,46 @@ def process_recognition(name, emp_id, dept, current_time, frame, bbox):
             
             # Confirm recognition after consecutive detections
             if consecutive_detections[name] >= CCTVAttendanceConfig.MIN_CONSECUTIVE_DETECTIONS:
-                if name not in today_attendance:
-                    mark_attendance_cctv(name, emp_id, dept, frame, bbox)
-                    today_attendance.add(name)
+                
+                if not is_checked_in:  # Person is not currently checked in
+                    # Mark as CHECK-IN
+                    if name not in today_attendance:
+                        today_attendance.add(name)
+                    
+                    employee_checked_in_status[name] = True
+                    mark_attendance_cctv(name, emp_id, dept, frame, bbox, entry_type="CHECK_IN")
                     last_recognition_time[name] = current_time
                     consecutive_detections[name] = 0
-                    return "marked"
+                    
+                    print(f"✅ CHECK-IN: {name} is now checked in (Auto-checkout in 1 min, then can check-in again)")
+                    return "checked_in"
                 else:
-                    return "already_marked"
+                    # Person is already checked in - within cooldown period
+                    print(f"⏳ {name} already checked in - auto-checkout in progress (1 min cycle)")
+                    return "already_checked_in"
             else:
                 return "confirming"
         else:
+            # Still in cooldown period
+            remaining_time = CCTVAttendanceConfig.RECOGNITION_COOLDOWN - (current_time - last_recognition_time[name])
+            if remaining_time > 60:
+                print(f"⏱️ {name} cooldown: {remaining_time/60:.1f} minutes remaining")
+            else:
+                print(f"⏱️ {name} cooldown: {remaining_time:.0f} seconds remaining")
             return "cooldown"
+            
     except Exception as e:
         print(f"❌ Process recognition error: {e}")
         return "error"
 
-def mark_attendance_cctv(name, emp_id, dept, frame, bbox):
-    """Mark attendance with CCTV screenshot and timestamp"""
-    global screenshot_counter
+def mark_attendance_cctv(name, emp_id, dept, frame, bbox, entry_type="CHECK_IN"):
+    """Enhanced attendance marking with check-in/check-out support for single-camera system"""
+    global screenshot_counter, employee_time_entries, employee_work_sessions
     
-    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-    date = time.strftime("%Y-%m-%d")
-    time_only = time.strftime("%H:%M:%S")
+    current_datetime = datetime.now()
+    timestamp = current_datetime.strftime("%Y-%m-%d %H:%M:%S")
+    date = current_datetime.strftime("%Y-%m-%d")
+    time_only = current_datetime.strftime("%H:%M:%S")
     
     # Create attendance directory if it doesn't exist
     attendance_dir = "attendance_records"
@@ -1065,40 +1116,490 @@ def mark_attendance_cctv(name, emp_id, dept, frame, bbox):
             # Create screenshot with highlighted face
             screenshot_frame = frame.copy()
             x1, y1, x2, y2 = bbox
-            cv2.rectangle(screenshot_frame, (x1, y1), (x2, y2), (0, 255, 0), 3)
-            cv2.putText(screenshot_frame, f"{name} - ATTENDANCE MARKED", 
-                       (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+            
+            # Color coding for entry type
+            color = (0, 255, 0) if entry_type == "CHECK_IN" else (0, 0, 255)  # Green for IN, Red for OUT
+            
+            cv2.rectangle(screenshot_frame, (x1, y1), (x2, y2), color, 3)
+            cv2.putText(screenshot_frame, f"{name} - {entry_type}", 
+                       (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
             cv2.putText(screenshot_frame, timestamp, 
                        (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
             
             screenshot_counter += 1
-            screenshot_filename = f"attendance_{name}_{date}_{time_only.replace(':', '-')}_{screenshot_counter}.jpg"
+            screenshot_filename = f"{entry_type.lower()}_{name}_{date}_{time_only.replace(':', '-')}_{screenshot_counter}.jpg"
             screenshot_path = os.path.join(attendance_dir, screenshot_filename)
             cv2.imwrite(screenshot_path, screenshot_frame)
-            print(f"📸 Screenshot saved: {screenshot_filename}")
+            print(f"📸 {entry_type} Screenshot saved: {screenshot_filename}")
         except Exception as e:
             print(f"❌ Failed to save screenshot: {e}")
     
-    # Save to CSV
+    # Enhanced Time Tracking Logic
+    if entry_type == "CHECK_IN":
+        process_check_in(name, emp_id, dept, current_datetime, screenshot_path)
+    else:  # CHECK_OUT
+        process_check_out(name, emp_id, dept, current_datetime, screenshot_path)
+    
+    # Save to traditional CSV (for backward compatibility)
+    save_traditional_attendance_csv(name, emp_id, dept, date, time_only, timestamp, screenshot_path, entry_type)
+    
+    print(f"✅ {entry_type}: {name} (ID: {emp_id}) at {time_only}")
+
+def process_check_in(name, emp_id, dept, entry_datetime, screenshot_path):
+    """Process check-in entry for single-camera system"""
+    global employee_time_entries
+    
+    # Add new time entry
+    employee_time_entries[name].append({
+        'datetime': entry_datetime,
+        'emp_id': emp_id,
+        'dept': dept,
+        'screenshot_path': screenshot_path,
+        'entry_type': 'CHECK_IN'
+    })
+    
+    print(f"🟢 {name} checked in at {entry_datetime.strftime('%H:%M:%S')} (Auto-checkout in 1 min)")
+    
+    # Force immediate Excel update for check-ins
+    print("🔄 Updating Excel immediately...")
+    update_time_tracking_excel()
+
+def process_check_out(name, emp_id, dept, exit_datetime, screenshot_path):
+    """Process check-out entry and calculate work session"""
+    global employee_time_entries, employee_work_sessions, employee_checked_in_status
+    
+    # Find the last check-in entry for this employee
+    if name in employee_time_entries and employee_time_entries[name]:
+        # Get the most recent check-in
+        recent_entries = [entry for entry in employee_time_entries[name] if entry['entry_type'] == 'CHECK_IN']
+        
+        if recent_entries:
+            last_checkin = recent_entries[-1]
+            
+            # Calculate work duration
+            work_duration = exit_datetime - last_checkin['datetime']
+            duration_minutes = work_duration.total_seconds() / 60
+            
+            # Create work session
+            work_session = {
+                'name': name,
+                'emp_id': emp_id,
+                'dept': dept,
+                'in_time': last_checkin['datetime'],
+                'out_time': exit_datetime,
+                'duration_minutes': duration_minutes,
+                'in_screenshot': last_checkin['screenshot_path'],
+                'out_screenshot': screenshot_path,
+                'auto_generated_out': False  # Manual checkout
+            }
+            
+            employee_work_sessions[name].append(work_session)
+            
+            # Add checkout entry
+            employee_time_entries[name].append({
+                'datetime': exit_datetime,
+                'emp_id': emp_id,
+                'dept': dept,
+                'screenshot_path': screenshot_path,
+                'entry_type': 'CHECK_OUT'
+            })
+            
+            # Update check-in status
+            employee_checked_in_status[name] = False
+            employee_last_checkout[name] = exit_datetime
+            
+            print(f"🔴 {name} checked out - Work session: {duration_minutes:.1f} minutes ({duration_minutes/60:.2f} hours)")
+        else:
+            print(f"⚠️ No check-in found for {name} - cannot process checkout")
+    
+    # Update Excel file
+    update_time_tracking_excel()
+
+def manual_checkout_employee(name):
+    """Manually checkout an employee via keyboard command"""
+    global employee_checked_in_status
+    
+    if name in employee_checked_in_status and employee_checked_in_status[name]:
+        # Find employee details
+        emp_id, dept = None, None
+        for _, emp_name, emp_id_val, dept_val in known_face_encodings:
+            if emp_name == name:
+                emp_id, dept = emp_id_val, dept_val
+                break
+        
+        if emp_id:
+            current_datetime = datetime.now()
+            # Create a dummy frame and bbox for manual checkout
+            dummy_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+            dummy_bbox = [100, 100, 200, 200]
+            
+            mark_attendance_cctv(name, emp_id, dept, dummy_frame, dummy_bbox, entry_type="CHECK_OUT")
+            print(f"✅ Manual checkout completed for {name}")
+            return True
+        else:
+            print(f"❌ Employee {name} not found in database")
+            return False
+    else:
+        print(f"⚠️ {name} is not currently checked in")
+        return False
+
+def auto_checkout_after_1_minute():
+    """Automatically checkout employees after exactly 1 minute of check-in for continuous cycle"""
+    current_datetime = datetime.now()
+    
+    for name, is_checked_in in employee_checked_in_status.items():
+        if is_checked_in and name in employee_time_entries:
+            # Find the most recent check-in
+            checkin_entries = [e for e in employee_time_entries[name] if e['entry_type'] == 'CHECK_IN']
+            if checkin_entries:
+                last_checkin = checkin_entries[-1]
+                time_since_checkin = current_datetime - last_checkin['datetime']
+                
+                # Auto-checkout after exactly 1 minute (60 seconds)
+                if time_since_checkin.total_seconds() >= 60:
+                    print(f"⏰ AUTO-CHECKOUT: {name} worked for 1 minute - enabling next check-in")
+                    manual_checkout_employee(name)
+
+def auto_checkout_all_employees():
+    """Auto checkout all employees at end of day"""
+    current_time = datetime.now().strftime("%H:%M")
+    auto_checkout_time = CCTVAttendanceConfig.AUTO_CHECKOUT_TIME
+    
+    if current_time >= auto_checkout_time:
+        checked_in_employees = [name for name, status in employee_checked_in_status.items() if status]
+        
+        for name in checked_in_employees:
+            print(f"🕕 Auto-checkout: {name} (End of day: {auto_checkout_time})")
+            manual_checkout_employee(name)
+        
+        if checked_in_employees:
+            print(f"✅ Auto-checkout completed for {len(checked_in_employees)} employees")
+
+def auto_checkout_after_1_minute():
+    """Automatically checkout employees after exactly 1 minute of check-in for continuous cycle"""
+    current_datetime = datetime.now()
+    
+    for name, is_checked_in in employee_checked_in_status.items():
+        if is_checked_in and name in employee_time_entries:
+            # Find the most recent check-in
+            checkin_entries = [e for e in employee_time_entries[name] if e['entry_type'] == 'CHECK_IN']
+            if checkin_entries:
+                last_checkin = checkin_entries[-1]
+                time_since_checkin = current_datetime - last_checkin['datetime']
+                
+                # Auto-checkout after exactly 1 minute (60 seconds)
+                if time_since_checkin.total_seconds() >= 60:
+                    print(f"⏰ AUTO-CHECKOUT: {name} worked for 1 minute - enabling next check-in")
+                    manual_checkout_employee(name)
+
+def display_checked_in_employees():
+    """Display currently checked-in employees"""
+    checked_in = [name for name, status in employee_checked_in_status.items() if status]
+    
+    if checked_in:
+        print(f"\n👥 CURRENTLY CHECKED IN ({len(checked_in)} employees):")
+        for name in checked_in:
+            # Find last check-in time
+            if name in employee_time_entries:
+                checkin_entries = [e for e in employee_time_entries[name] if e['entry_type'] == 'CHECK_IN']
+                if checkin_entries:
+                    last_checkin = checkin_entries[-1]['datetime']
+                    duration = datetime.now() - last_checkin
+                    hours = duration.total_seconds() / 3600
+                    print(f"  🟢 {name} - Checked in for {hours:.1f} hours")
+    else:
+        print("\n👥 No employees currently checked in")
+
+def save_traditional_attendance_csv(name, emp_id, dept, date, time_only, timestamp, screenshot_path, entry_type="CHECK_IN"):
+    """Save to traditional CSV format for backward compatibility"""
+    attendance_dir = "attendance_records"
     attendance_file = os.path.join(attendance_dir, f"daily_attendance_{date}.csv")
     file_exists = os.path.exists(attendance_file)
     
-    with open(attendance_file, 'a', newline='') as csvfile:
-        writer = csv.writer(csvfile)
-        if not file_exists:
-            writer.writerow(['Name', 'Employee_ID', 'Department', 'Date', 'Time', 
-                           'Full_Timestamp', 'Screenshot_Path', 'Source'])
+    try:
+        with open(attendance_file, 'a', newline='', encoding='utf-8') as csvfile:
+            writer = csv.writer(csvfile)
+            if not file_exists:
+                writer.writerow(['Name', 'Employee_ID', 'Department', 'Date', 'Time', 
+                               'Full_Timestamp', 'Screenshot_Path', 'Entry_Type', 'Source'])
+            
+            writer.writerow([name, emp_id, dept, date, time_only, timestamp, 
+                            screenshot_path or 'N/A', entry_type, 'CCTV'])
+    except PermissionError:
+        print(f"⚠️ Permission denied writing to {attendance_file} - file may be open in Excel")
+
+def update_time_tracking_excel():
+    """Create Excel with TWO SHEETS: Working Hours Summary + Detailed In/Out Times"""
+    if not time_tracking_enabled:
+        return
         
-        writer.writerow([name, emp_id, dept, date, time_only, timestamp, 
-                        screenshot_path or 'N/A', 'CCTV'])
+    try:
+        attendance_dir = "attendance_records"
+        if not os.path.exists(attendance_dir):
+            os.makedirs(attendance_dir)
+            
+        date = datetime.now().strftime("%Y-%m-%d")
+        excel_file = os.path.join(attendance_dir, f"time_tracking_{date}.xlsx")
+        
+        print(f"🔄 Creating TWO-SHEET Excel: {excel_file}")
+        
+        # Force refresh by deleting old file
+        if os.path.exists(excel_file):
+            try:
+                os.remove(excel_file)
+                print("🗑️ Deleted old Excel file")
+            except:
+                print("⚠️ Could not delete old Excel file - it may be open")
+        
+        # SHEET 1 DATA: Working Hours Summary
+        summary_data = []
+        
+        # SHEET 2 DATA: Detailed In/Out Times (consecutive entries)
+        detailed_data = []
+        
+        # Process each employee
+        for name, entries in employee_time_entries.items():
+            if not entries:
+                continue
+                
+            # Sort entries by datetime
+            sorted_entries = sorted(entries, key=lambda x: x['datetime'])
+            
+            # For SHEET 2: Add all consecutive entries (in/out pattern)
+            total_work_minutes = 0
+            sessions_count = 0
+            
+            for i, entry in enumerate(sorted_entries):
+                # Add every entry to detailed log
+                detailed_data.append({
+                    'Name': name,
+                    'Employee_ID': entry['emp_id'],
+                    'Department': entry['dept'],
+                    'Entry_Type': entry['entry_type'],
+                    'Time': entry['datetime'].strftime('%H:%M:%S'),
+                    'Full_DateTime': entry['datetime'].strftime('%Y-%m-%d %H:%M:%S'),
+                    'Date': entry['datetime'].strftime('%Y-%m-%d'),
+                    'Screenshot_Path': entry['screenshot_path'] or 'N/A'
+                })
+                
+                # Calculate work sessions for summary
+                if entry['entry_type'] == 'CHECK_IN':
+                    # Look for corresponding checkout
+                    for j in range(i + 1, len(sorted_entries)):
+                        if sorted_entries[j]['entry_type'] == 'CHECK_OUT':
+                            checkout_entry = sorted_entries[j]
+                            duration = checkout_entry['datetime'] - entry['datetime']
+                            work_minutes = duration.total_seconds() / 60
+                            total_work_minutes += work_minutes
+                            sessions_count += 1
+                            break
+            
+            # For SHEET 1: Summary data
+            total_work_hours = total_work_minutes / 60
+            current_status = 'Checked In' if employee_checked_in_status.get(name, False) else 'Checked Out'
+            
+            if sorted_entries:  # Only add if employee has entries
+                summary_data.append({
+                    'Name': name,
+                    'Employee_ID': sorted_entries[0]['emp_id'],
+                    'Department': sorted_entries[0]['dept'],
+                    'Total_Work_Hours': round(total_work_hours, 2),
+                    'Total_Work_Minutes': round(total_work_minutes, 1),
+                    'Number_of_Sessions': sessions_count,
+                    'Current_Status': current_status,
+                    'First_Check_In': sorted_entries[0]['datetime'].strftime('%H:%M:%S'),
+                    'Last_Activity': sorted_entries[-1]['datetime'].strftime('%H:%M:%S'),
+                    'Date': date
+                })
+        
+        # Create DataFrames for both sheets
+        df_summary = pd.DataFrame(summary_data)
+        df_detailed = pd.DataFrame(detailed_data)
+        
+        # Create Excel with TWO SHEETS
+        with pd.ExcelWriter(excel_file, engine='openpyxl') as writer:
+            
+            # SHEET 1: Working Hours Summary
+            if not df_summary.empty:
+                df_summary.to_excel(writer, sheet_name='Working_Hours_Summary', index=False)
+            else:
+                # Empty summary sheet with headers
+                empty_summary = pd.DataFrame(columns=[
+                    'Name', 'Employee_ID', 'Department', 'Total_Work_Hours', 'Total_Work_Minutes',
+                    'Number_of_Sessions', 'Current_Status', 'First_Check_In', 'Last_Activity', 'Date'
+                ])
+                empty_summary.to_excel(writer, sheet_name='Working_Hours_Summary', index=False)
+            
+            # SHEET 2: Detailed In/Out Times (Consecutive)
+            if not df_detailed.empty:
+                df_detailed.to_excel(writer, sheet_name='Detailed_InOut_Log', index=False)
+            else:
+                # Empty detailed sheet with headers
+                empty_detailed = pd.DataFrame(columns=[
+                    'Name', 'Employee_ID', 'Department', 'Entry_Type', 'Time', 
+                    'Full_DateTime', 'Date', 'Screenshot_Path'
+                ])
+                empty_detailed.to_excel(writer, sheet_name='Detailed_InOut_Log', index=False)
+            
+            # Auto-adjust column widths for both sheets
+            for sheet_name in writer.sheets:
+                worksheet = writer.sheets[sheet_name]
+                for column in worksheet.columns:
+                    max_length = 0
+                    column_letter = column[0].column_letter
+                    for cell in column:
+                        try:
+                            if len(str(cell.value)) > max_length:
+                                max_length = len(str(cell.value))
+                        except:
+                            pass
+                    adjusted_width = min(max_length + 2, 25)
+                    worksheet.column_dimensions[column_letter].width = adjusted_width
+        
+        print(f"✅ TWO-SHEET Excel created successfully!")
+        print(f"📊 Sheet 1 (Summary): {len(summary_data)} employees")
+        print(f"📋 Sheet 2 (Detailed): {len(detailed_data)} entries")
+        
+        # Show summary of what was created
+        if summary_data:
+            print("\\n📈 WORKING HOURS SUMMARY:")
+            for emp in summary_data:
+                print(f"   {emp['Name']}: {emp['Total_Work_Hours']}h ({emp['Current_Status']})")
+        
+        if detailed_data:
+            print("\\n📝 DETAILED LOG (Recent entries):")
+            for entry in detailed_data[-5:]:  # Show last 5 entries
+                print(f"   {entry['Name']}: {entry['Entry_Type']} at {entry['Time']}")
+        
+    except Exception as e:
+        print(f"❌ Excel creation failed: {e}")
+        import traceback
+        traceback.print_exc()
+
+def save_time_tracking_csv():
+    """Enhanced CSV saving with better error handling and original format"""
+    try:
+        attendance_dir = "attendance_records"
+        date = datetime.now().strftime("%Y-%m-%d")
+        
+        # Save in original yaseen format
+        main_file = os.path.join(attendance_dir, f"daily_attendance_{date}.csv")
+        sessions_file = os.path.join(attendance_dir, f"work_sessions_{date}.csv")
+        
+        # Main attendance file (original format)
+        try:
+            with open(main_file, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(['Name', 'Employee_ID', 'Department', 'In_Time', 'Out_Time', 
+                               'Duration_Minutes', 'Duration_Hours', 'Auto_Generated_Out', 'Date'])
+                
+                for name, entries in employee_time_entries.items():
+                    sorted_entries = sorted(entries, key=lambda x: x['datetime'])
+                    
+                    for i, entry in enumerate(sorted_entries):
+                        if entry['entry_type'] == 'CHECK_IN':
+                            out_time = ""
+                            duration_minutes = 0
+                            duration_hours = 0
+                            auto_generated = False
+                            
+                            # Look for corresponding checkout
+                            for j in range(i + 1, len(sorted_entries)):
+                                if sorted_entries[j]['entry_type'] == 'CHECK_OUT':
+                                    checkout_entry = sorted_entries[j]
+                                    out_time = checkout_entry['datetime'].strftime('%H:%M:%S')
+                                    duration = checkout_entry['datetime'] - entry['datetime']
+                                    duration_minutes = duration.total_seconds() / 60
+                                    duration_hours = duration_minutes / 60
+                                    break
+                            
+                            # If still checked in, show as current status
+                            if not out_time and employee_checked_in_status.get(name, False):
+                                out_time = "Currently Checked In"
+                                auto_generated = True
+                            
+                            writer.writerow([
+                                name, entry['emp_id'], entry['dept'],
+                                entry['datetime'].strftime('%H:%M:%S'),
+                                out_time,
+                                round(duration_minutes, 1),
+                                round(duration_hours, 2),
+                                auto_generated,
+                                entry['datetime'].strftime('%Y-%m-%d')
+                            ])
+            
+            print(f"📊 Main CSV saved: {main_file}")
+        except Exception as e:
+            print(f"❌ Failed to save main CSV: {e}")
+        
+        # Work sessions file (detailed sessions)
+        try:
+            with open(sessions_file, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(['Name', 'Employee_ID', 'Department', 'In_Time', 'Out_Time', 
+                               'Duration_Minutes', 'Duration_Hours', 'Auto_Generated_Out', 'Date'])
+                
+                for name, sessions in employee_work_sessions.items():
+                    for session in sessions:
+                        writer.writerow([
+                            session['name'], session['emp_id'], session['dept'],
+                            session['in_time'].strftime('%H:%M:%S'),
+                            session['out_time'].strftime('%H:%M:%S'),
+                            round(session['duration_minutes'], 1),
+                            round(session['duration_minutes'] / 60, 2),
+                            session.get('auto_generated_out', False),
+                            session['in_time'].strftime('%Y-%m-%d')
+                        ])
+            
+            print(f"📊 Sessions CSV saved: {sessions_file}")
+        except Exception as e:
+            print(f"❌ Failed to save sessions CSV: {e}")
+            
+    except Exception as e:
+        print(f"❌ Failed to save CSV backup: {e}")
+
+def get_employee_total_work_time(name):
+    """Get total work time for an employee today"""
+    if name not in employee_work_sessions:
+        return 0, 0  # minutes, hours
     
-    print(f"✅ CCTV ATTENDANCE MARKED: {name} (ID: {emp_id}) at {time_only}")
+    total_minutes = sum(session['duration_minutes'] for session in employee_work_sessions[name])
+    total_hours = total_minutes / 60
+    
+    return total_minutes, total_hours
+
+def display_time_tracking_summary():
+    """Display comprehensive time tracking summary"""
+    print(f"\n📊 TIME TRACKING SUMMARY - {datetime.now().strftime('%Y-%m-%d')}")
+    print("=" * 60)
+    
+    if not employee_work_sessions:
+        print("No work sessions recorded yet today.")
+        return
+    
+    for name in employee_work_sessions:
+        total_minutes, total_hours = get_employee_total_work_time(name)
+        sessions_count = len(employee_work_sessions[name])
+        entries_count = len(employee_time_entries[name])
+        
+        print(f"\n👤 {name}:")
+        print(f"   📝 Total entries today: {entries_count}")
+        print(f"   ⏱️  Work sessions: {sessions_count}")
+        print(f"   🕐 Total work time: {total_hours:.2f} hours ({total_minutes:.1f} minutes)")
+        
+        if name in employee_work_sessions:
+            print(f"   📋 Session details:")
+            for i, session in enumerate(employee_work_sessions[name], 1):
+                in_time = session['in_time'].strftime('%H:%M:%S')
+                out_time = session['out_time'].strftime('%H:%M:%S')
+                duration = session['duration_minutes']
+                print(f"      {i}. {in_time} → {out_time} ({duration:.1f} min)")
 
 def display_cctv_statistics(frame):
-    """Display real-time CCTV statistics on frame"""
+    """Display real-time CCTV statistics with time tracking info on frame"""
     # Background overlay for better readability
     overlay = frame.copy()
-    cv2.rectangle(overlay, (0, 0), (400, 120), (0, 0, 0), -1)
+    cv2.rectangle(overlay, (0, 0), (500, 180), (0, 0, 0), -1)
     cv2.addWeighted(overlay, 0.3, frame, 0.7, 0, frame)
     
     # Display attendance count
@@ -1108,6 +1609,26 @@ def display_cctv_statistics(frame):
     # Display enrolled employees
     cv2.putText(frame, f"Enrolled Employees: {len(known_face_encodings)}", 
                 (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+    
+    # Display time tracking info
+    total_work_sessions = sum(len(sessions) for sessions in employee_work_sessions.values())
+    cv2.putText(frame, f"Work Sessions: {total_work_sessions}", 
+                (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+    
+    # Display current time
+    current_time = time.strftime("%H:%M:%S")
+    cv2.putText(frame, f"Time: {current_time}", 
+                (10, 120), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+    
+    # Display total active employees with work time today
+    active_employees = len([name for name in employee_work_sessions if employee_work_sessions[name]])
+    if active_employees > 0:
+        cv2.putText(frame, f"Active Workers: {active_employees}", 
+                    (10, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+    
+    # Display CCTV status
+    cv2.putText(frame, "CCTV LIVE + TIME TRACKING", 
+                (frame.shape[1] - 300, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
     
     # Display current time
     current_time = time.strftime("%H:%M:%S")
@@ -1167,14 +1688,21 @@ def cctv_attendance_system():
     width, height, fps = video_props
     print(f"✅ Video source connected: {width}x{height} @ {fps} FPS")
     
-    print("\n🎥 Starting CCTV attendance monitoring...")
-    print("📋 Instructions:")
+    print("\n🎥 Starting Enhanced CCTV Attendance & Time Tracking...")
+    print("📋 Enhanced Instructions:")
+    print(f"⏰ Auto-cycle: 1 minute (Check-in → Auto-checkout → Can check-in again)")
+    print(f"🔄 Auto-checkout: 6 PM")
+    print("\n🎮 ESSENTIAL CONTROLS:")
     if GUI_AVAILABLE:
-        print("   - Press 'q' to quit")
-        print("   - Press 's' to show today's attendance")
-        print("   - Press 'r' to reset today's attendance")
-        print("   - Press 'h' for help")
-        print("   - Press 'c' to capture manual screenshot")
+        print("   'O' - Manual checkout menu")
+        print("   'C' - Show checked-in employees")
+        print("   'A' - Checkout all employees")
+        print("   'Q' - Quit system")
+        print("   'H' - Full help menu")
+        print("\n📊 REPORTS & DATA:")
+        print("   'S' - Show attendance summary")
+        print("   'T' - Show time tracking summary")
+        print("   'E' - Export Excel report")
     else:
         print("   - Press Ctrl+C to stop")
     
@@ -1217,6 +1745,9 @@ def cctv_attendance_system():
                 elapsed = time.time() - fps_start_time
                 current_fps = 30 / elapsed if elapsed > 0 else 0
                 fps_start_time = time.time()
+                
+                # Check for 1-minute auto-checkout (every 30 frames ≈ every second)
+                auto_checkout_after_1_minute()
             
             # Resize frame to standard size for consistent processing
             if frame.shape[1] != width or frame.shape[0] != height:
@@ -1291,19 +1822,78 @@ def cctv_attendance_system():
                         print(f"Total Present: {len(today_attendance)}")
                         if today_attendance:
                             for name in sorted(today_attendance):
-                                # Find employee details
+                                # Find employee details and show work time
                                 for _, emp_name, emp_id, dept in known_face_encodings:
                                     if emp_name == name:
-                                        print(f"  ✓ {name} (ID: {emp_id}, Dept: {dept})")
+                                        total_minutes, total_hours = get_employee_total_work_time(name)
+                                        print(f"  ✓ {name} (ID: {emp_id}, Dept: {dept}) - Work time: {total_hours:.2f}h")
                                         break
                         else:
                             print("  No one has attended yet today.")
                         print()
+                    elif key == ord('t'):
+                        # Show time tracking summary
+                        display_time_tracking_summary()
+                    elif key == ord('w'):
+                        # Show work sessions details
+                        print(f"\n🕒 WORK SESSIONS DETAILS - {time.strftime('%Y-%m-%d')}")
+                        print("=" * 50)
+                        if employee_work_sessions:
+                            for name, sessions in employee_work_sessions.items():
+                                print(f"\n👤 {name}:")
+                                for i, session in enumerate(sessions, 1):
+                                    in_time = session['in_time'].strftime('%H:%M:%S')
+                                    out_time = session['out_time'].strftime('%H:%M:%S')
+                                    duration = session['duration_minutes']
+                                    print(f"  {i}. {in_time} → {out_time} ({duration:.1f} min)")
+                        else:
+                            print("No work sessions recorded yet.")
+                        print()
+                    elif key == ord('e'):
+                        # Export Excel report manually
+                        update_time_tracking_excel()
+                        print("📊 Excel report exported manually!")
+                    elif key == ord('o'):
+                        # Manual checkout - show currently checked in employees
+                        checked_in = [name for name, status in employee_checked_in_status.items() if status]
+                        if checked_in:
+                            print(f"\n🔴 MANUAL CHECKOUT AVAILABLE:")
+                            for i, name in enumerate(checked_in, 1):
+                                print(f"  {i}. {name}")
+                            print(f"\n👆 Press number key (1-{len(checked_in)}) to checkout employee")
+                            print("   Or press 'A' to checkout ALL employees")
+                        else:
+                            print("\n⚠️ No employees currently checked in")
+                    elif key >= ord('1') and key <= ord('9'):
+                        # Checkout specific employee by number
+                        checkout_index = int(chr(key)) - 1
+                        checked_in = [name for name, status in employee_checked_in_status.items() if status]
+                        if 0 <= checkout_index < len(checked_in):
+                            employee_name = checked_in[checkout_index]
+                            manual_checkout_employee(employee_name)
+                        else:
+                            print(f"❌ Invalid selection. Available: 1-{len(checked_in)}")
+                    elif key == ord('a'):
+                        # Auto checkout all employees
+                        checked_in = [name for name, status in employee_checked_in_status.items() if status]
+                        if checked_in:
+                            print(f"\n🔴 CHECKOUT ALL EMPLOYEES ({len(checked_in)} employees):")
+                            for name in checked_in:
+                                manual_checkout_employee(name)
+                            print("✅ All employees checked out!")
+                        else:
+                            print("\n⚠️ No employees currently checked in")
+                    elif key == ord('c'):
+                        # Show currently checked-in employees
+                        display_checked_in_employees()
                     elif key == ord('r'):
+                        # Reset all tracking data
                         today_attendance.clear()
                         last_recognition_time.clear()
                         consecutive_detections.clear()
-                        print("🔄 Today's attendance has been reset!")
+                        employee_time_entries.clear()
+                        employee_work_sessions.clear()
+                        print("🔄 All attendance and time tracking data has been reset!")
                     elif key == ord('c'):
                         # Manual screenshot capture
                         timestamp = time.strftime("%Y%m%d_%H%M%S")
@@ -1311,10 +1901,13 @@ def cctv_attendance_system():
                         cv2.imwrite(screenshot_name, frame)
                         print(f"📸 Manual screenshot saved: {screenshot_name}")
                     elif key == ord('h'):
-                        print("\n📋 HELP - Keyboard Controls:")
+                        print("\n📋 ENHANCED HELP - Keyboard Controls:")
                         print("  'q' - Quit the system")
-                        print("  's' - Show today's attendance summary")
-                        print("  'r' - Reset today's attendance")
+                        print("  's' - Show today's attendance summary with work hours")
+                        print("  't' - Show detailed time tracking summary")
+                        print("  'w' - Show work sessions details")
+                        print("  'e' - Export Excel report manually")
+                        print("  'r' - Reset all attendance and time tracking data")
                         print("  'c' - Capture manual screenshot")
                         print("  'h' - Show this help message")
                         print()
@@ -1345,19 +1938,32 @@ def cctv_attendance_system():
             except:
                 pass
         
-        # Final summary
-        print(f"\n📊 FINAL CCTV SESSION SUMMARY:")
+        # Final enhanced summary with time tracking
+        print(f"\n📊 FINAL ENHANCED CCTV SESSION SUMMARY:")
         print(f"Total employees enrolled: {len(known_face_encodings)}")
         print(f"Employees present today: {len(today_attendance)}")
         print(f"Total frames processed: {frame_count}")
+        
+        # Time tracking summary
+        total_work_sessions = sum(len(sessions) for sessions in employee_work_sessions.values())
+        print(f"Total work sessions: {total_work_sessions}")
+        
         if today_attendance:
-            print("📋 Today's Attendees:")
+            print("📋 Today's Attendees with Work Time:")
             for name in sorted(today_attendance):
                 for _, emp_name, emp_id, dept in known_face_encodings:
                     if emp_name == name:
-                        print(f"  ✓ {name} (ID: {emp_id}, Dept: {dept})")
+                        total_minutes, total_hours = get_employee_total_work_time(name)
+                        sessions_count = len(employee_work_sessions.get(name, []))
+                        print(f"  ✓ {name} (ID: {emp_id}, Dept: {dept}) - {total_hours:.2f}h in {sessions_count} sessions")
                         break
-        print("✅ CCTV attendance system stopped")
+        
+        # Generate final Excel report
+        if employee_work_sessions or employee_time_entries:
+            update_time_tracking_excel()
+            print("📊 Final Excel time tracking report generated")
+        
+        print("✅ Enhanced CCTV attendance & time tracking system stopped")
 
 if __name__ == "__main__":
     cctv_attendance_system()
