@@ -1,0 +1,16 @@
+Name,Employee_ID,Department,Date,Time,Full_Timestamp,Screenshot_Path,Entry_Type,Source
+sajj,9876,AI&DS,2025-10-09,14:51:45,2025-10-09 14:51:45,attendance_records\check_in_sajj_2025-10-09_14-51-45_1.jpg,CHECK_IN,CCTV
+zayd,1001,AI&DS,2025-10-09,15:05:53,2025-10-09 15:05:53,attendance_records\check_in_zayd_2025-10-09_15-05-53_1.jpg,CHECK_IN,CCTV
+zayd,1001,AI&DS,2025-10-09,15:07:04,2025-10-09 15:07:04,attendance_records\check_out_zayd_2025-10-09_15-07-04_2.jpg,CHECK_OUT,CCTV
+darun,1002,AI&DS,2025-10-09,15:14:05,2025-10-09 15:14:05,attendance_records\check_in_darun_2025-10-09_15-14-05_3.jpg,CHECK_IN,CCTV
+darun,1002,AI&DS,2025-10-09,15:15:06,2025-10-09 15:15:06,attendance_records\check_out_darun_2025-10-09_15-15-06_4.jpg,CHECK_OUT,CCTV
+darun,1002,AI&DS,2025-10-09,15:20:37,2025-10-09 15:20:37,attendance_records\check_in_darun_2025-10-09_15-20-37_1.jpg,CHECK_IN,CCTV
+darun,1002,AI&DS,2025-10-09,15:21:42,2025-10-09 15:21:42,attendance_records\check_out_darun_2025-10-09_15-21-42_2.jpg,CHECK_OUT,CCTV
+zayd,1001,AI&DS,2025-10-09,15:22:53,2025-10-09 15:22:53,attendance_records\check_in_zayd_2025-10-09_15-22-53_3.jpg,CHECK_IN,CCTV
+zayd,1001,AI&DS,2025-10-09,15:23:57,2025-10-09 15:23:57,attendance_records\check_out_zayd_2025-10-09_15-23-57_4.jpg,CHECK_OUT,CCTV
+sajj,9876,AI&DS,2025-10-09,15:24:15,2025-10-09 15:24:15,attendance_records\check_in_sajj_2025-10-09_15-24-15_5.jpg,CHECK_IN,CCTV
+darun,1002,AI&DS,2025-10-09,15:24:56,2025-10-09 15:24:56,attendance_records\check_in_darun_2025-10-09_15-24-56_6.jpg,CHECK_IN,CCTV
+sajj,9876,AI&DS,2025-10-09,15:25:27,2025-10-09 15:25:27,attendance_records\check_out_sajj_2025-10-09_15-25-27_7.jpg,CHECK_OUT,CCTV
+sajj,9876,AI&DS,2025-10-09,15:25:51,2025-10-09 15:25:51,attendance_records\check_in_sajj_2025-10-09_15-25-51_8.jpg,CHECK_IN,CCTV
+darun,1002,AI&DS,2025-10-09,15:25:58,2025-10-09 15:25:58,attendance_records\check_out_darun_2025-10-09_15-25-58_9.jpg,CHECK_OUT,CCTV
+iyaaa,1003,AI&DS,2025-10-09,15:26:01,2025-10-09 15:26:01,attendance_records\check_in_iyaaa_2025-10-09_15-26-01_10.jpg,CHECK_IN,CCTV

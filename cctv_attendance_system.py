@@ -1651,6 +1651,12 @@ def cctv_attendance_system():
     employees_loaded += add_employee('yaseen', '1170', 'AI&DS', 'yaseen.jpg')
     employees_loaded += add_employee('sajj', '9876', 'AI&DS', 'sajj.jpg')
     
+    # ADD YOUR 4 FRIENDS HERE - Update with their actual names, IDs, and photo filenames:
+    employees_loaded += add_employee('zayd', '1001', 'AI&DS', 'zayd.jpg')
+    employees_loaded += add_employee('darun', '1002', 'AI&DS', 'darun.jpg')
+    employees_loaded += add_employee('iyaaa', '1003', 'AI&DS', 'iyaaa.jpg')
+    employees_loaded += add_employee('lokesh', '1004', 'AI&DS', 'lokesh.jpg')
+    
     # Add more employees here as needed:
     # employees_loaded += add_employee('employee_name', 'employee_id', 'department', 'image.jpg')
     
