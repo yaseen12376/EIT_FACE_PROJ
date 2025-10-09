@@ -32,9 +32,22 @@ class CCTVAttendanceConfig:
     # Available options: "insightface", "balanced", "retinaface"
     MODEL_TYPE = None  # Will be set by user selection
     
-    # CCTV Connection Settings
+    # DUAL CAMERA CONNECTION SETTINGS
+    # Primary Camera (CHECK_IN) - Existing CCTV
+    CHECKIN_CAMERA_URL = "rtsp://admin:AK@MrA!4501$uf@192.168.0.109:554/cam/realmonitor?channel=8&subtype=0"
+    CHECKIN_CAMERA_TYPE = "RTSP"  # RTSP, HTTP, USB
+    
+    # Secondary Camera (CHECK_OUT) - IP WebCam Mobile Phone
+    CHECKOUT_CAMERA_URL = "http://192.168.0.180:8080/video"  # Your IP WebCam URL
+    CHECKOUT_CAMERA_TYPE = "HTTP"  # IP WebCam uses HTTP/HTTPS
+    
+    # Legacy RTSP URL (for backward compatibility)
     RTSP_URL = "rtsp://admin:AK@MrA!4501$uf@192.168.0.109:554/cam/realmonitor?channel=8&subtype=0"
     ALTERNATIVE_URLS = []  # Add backup URLs if needed
+    
+    # Dual Camera Configuration
+    DUAL_CAMERA_MODE = True       # Enable dual camera system
+    SINGLE_CAMERA_FALLBACK = True # Fallback to single camera if one fails
     
     # Detection optimizations for CCTV processing (auto-adjusted per model)
     DETECTION_SIZE = (960, 960)        # Balanced for CCTV quality
@@ -76,15 +89,31 @@ class CCTVAttendanceConfig:
     PROCESS_EVERY_N_FRAMES = 2        # Process every 2nd frame for CCTV
     
     # CCTV-specific settings
-    RECOGNITION_COOLDOWN = 60.0       # 1 minute cooldown for testing (was 300.0 = 5 minutes)
+    RECOGNITION_COOLDOWN = 0.0        # NO COOLDOWN for dual camera mode - immediate checkout allowed
     MIN_CONSECUTIVE_DETECTIONS = 2    # Fewer detections needed for CCTV
     CONNECTION_RETRY_INTERVAL = 5.0   # Retry connection every 5 seconds
     
-    # Single-Camera Session Management
+    # Dual-Camera Session Management
     ENABLE_SESSION_MANAGEMENT = True  # Track check-in/check-out status
     AUTO_CHECKOUT_TIME = "18:00"       # Automatic checkout time (6 PM)
     MANUAL_CHECKOUT_ENABLED = True     # Allow manual checkout via keyboard
     SESSION_TIMEOUT_HOURS = 8          # Max session length before auto-checkout
+    
+    # Disable Auto-Checkout (Use Mobile Camera Instead)
+    ENABLE_AUTO_CHECKOUT = False       # DISABLED - Use mobile camera for checkout
+    AUTO_CHECKOUT_MINUTES = 0          # DISABLED - No more 2-minute auto-checkout
+    
+    # IP WebCam Configuration (for mobile phone checkout camera)
+    IP_WEBCAM_CONFIG = {
+        'default_port': 8080,
+        'video_path': '/video',      # IP WebCam default path
+        'photo_path': '/photo.jpg',  # For single frame capture
+        'username': '',              # Optional authentication
+        'password': '',              # Optional authentication
+        'quality': 'medium',         # low, medium, high
+        'timeout': 10,               # Connection timeout seconds
+        'retry_attempts': 3          # Connection retry attempts
+    }
     
     # Display settings for CCTV monitoring
     DISPLAY_WIDTH = 1280
@@ -755,8 +784,126 @@ def test_cctv_connection():
     
     return None, None
 
-def recognize_faces_cctv(frame):
-    """Optimized face recognition for CCTV processing using active model"""
+def test_camera_connection(camera_url, camera_type="RTSP", camera_name="Camera"):
+    """Test individual camera connection and return capture object with properties"""
+    print(f"🔗 Testing {camera_name} connection...")
+    print(f"   🌐 URL: {camera_url}")
+    print(f"   📡 Type: {camera_type}")
+    
+    cap = None
+    
+    try:
+        if camera_type.upper() == "HTTP" or camera_type.upper() == "HTTPS":
+            # For IP WebCam (HTTP streams)
+            cap = cv2.VideoCapture(camera_url)
+            # Reduce buffer for HTTP streams to minimize latency
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            
+        elif camera_type.upper() == "RTSP":
+            # For RTSP streams (traditional CCTV)
+            cap = cv2.VideoCapture(camera_url)
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            
+        else:  # USB or other
+            cap = cv2.VideoCapture(int(camera_url) if camera_url.isdigit() else camera_url)
+        
+        if cap and cap.isOpened():
+            # Test if we can read a frame
+            ret, test_frame = cap.read()
+            
+            if ret and test_frame is not None:
+                # Get video properties
+                width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                fps = int(cap.get(cv2.CAP_PROP_FPS))
+                
+                # Use sensible defaults if properties are invalid
+                if width <= 0 or height <= 0:
+                    width, height = 1280, 720  # Default resolution
+                if fps <= 0:
+                    fps = 25 if camera_type.upper() == "RTSP" else 30
+                
+                print(f"✅ {camera_name} connected successfully")
+                print(f"   📐 Resolution: {width} x {height}")
+                print(f"   🎬 FPS: {fps}")
+                print(f"   🎯 Test frame: {test_frame.shape}")
+                
+                return cap, (width, height, fps)
+            else:
+                print(f"❌ Cannot read frames from {camera_name}")
+        else:
+            print(f"❌ Cannot open {camera_name} stream")
+    
+    except Exception as e:
+        print(f"❌ {camera_name} connection error: {e}")
+    
+    if cap:
+        cap.release()
+    
+    return None, (0, 0, 0)
+
+def test_dual_camera_connection():
+    """Test both CHECK_IN and CHECK_OUT cameras"""
+    print("\n" + "="*60)
+    print("🎥🎥 DUAL CAMERA CONNECTION TEST")
+    print("="*60)
+    
+    cameras_connected = {}
+    
+    # Test CHECK_IN Camera (Primary CCTV)
+    if CCTVAttendanceConfig.CHECKIN_CAMERA_URL:
+        checkin_cap, checkin_props = test_camera_connection(
+            CCTVAttendanceConfig.CHECKIN_CAMERA_URL,
+            CCTVAttendanceConfig.CHECKIN_CAMERA_TYPE,
+            "CHECK_IN Camera (CCTV)"
+        )
+        cameras_connected['checkin'] = (checkin_cap, checkin_props)
+    else:
+        print("⚠️ CHECK_IN camera URL not configured")
+        cameras_connected['checkin'] = (None, (0, 0, 0))
+    
+    print()  # Spacing
+    
+    # Test CHECK_OUT Camera (IP WebCam)
+    if CCTVAttendanceConfig.CHECKOUT_CAMERA_URL:
+        checkout_cap, checkout_props = test_camera_connection(
+            CCTVAttendanceConfig.CHECKOUT_CAMERA_URL,
+            CCTVAttendanceConfig.CHECKOUT_CAMERA_TYPE,
+            "CHECK_OUT Camera (IP WebCam)"
+        )
+        cameras_connected['checkout'] = (checkout_cap, checkout_props)
+    else:
+        print("⚠️ CHECK_OUT camera URL not configured")
+        print("💡 Please set up IP WebCam on your mobile phone")
+        cameras_connected['checkout'] = (None, (0, 0, 0))
+    
+    # Summary
+    checkin_ok = cameras_connected['checkin'][0] is not None
+    checkout_ok = cameras_connected['checkout'][0] is not None
+    
+    print(f"\n📊 CONNECTION SUMMARY:")
+    print(f"   CHECK_IN Camera: {'✅ Connected' if checkin_ok else '❌ Failed'}")
+    print(f"   CHECK_OUT Camera: {'✅ Connected' if checkout_ok else '❌ Failed'}")
+    
+    if checkin_ok and checkout_ok:
+        print("🎉 DUAL CAMERA MODE: Both cameras ready!")
+        return cameras_connected, "DUAL"
+    elif checkin_ok:
+        print("⚠️ SINGLE CAMERA MODE: Only CHECK_IN camera available")
+        if CCTVAttendanceConfig.SINGLE_CAMERA_FALLBACK:
+            print("🔄 Continuing with single camera + manual checkout")
+            return cameras_connected, "SINGLE_CHECKIN"
+        else:
+            return cameras_connected, "FAILED"
+    elif checkout_ok:
+        print("⚠️ SINGLE CAMERA MODE: Only CHECK_OUT camera available")
+        return cameras_connected, "SINGLE_CHECKOUT"
+    else:
+        print("❌ NO CAMERAS AVAILABLE")
+        return cameras_connected, "FAILED"
+
+def recognize_faces_cctv(frame, entry_type="CHECK_IN"):
+    """Optimized face recognition for CCTV processing using active model with dual camera support"""
     global active_model, face_app
     current_time = time.time()
     
@@ -923,7 +1070,7 @@ def recognize_faces_cctv(frame):
                     _, name, emp_id, dept = known_face_encodings[max_idx]
                     
                     # Check cooldown and process recognition
-                    status = process_recognition(name, emp_id, dept, current_time, frame, bbox)
+                    status = process_recognition(name, emp_id, dept, current_time, frame, bbox, entry_type)
                     
                     results.append({
                         "name": name,
@@ -1000,7 +1147,7 @@ def recognize_faces_cctv(frame):
                                     _, name, emp_id, dept = valid_known_encodings[max_idx]
                                     
                                     # Check cooldown and process recognition
-                                    status = process_recognition(name, emp_id, dept, current_time, frame, scaled_bbox)
+                                    status = process_recognition(name, emp_id, dept, current_time, frame, scaled_bbox, entry_type)
                                     
                                     results.append({
                                         "name": name,
@@ -1022,7 +1169,7 @@ def recognize_faces_cctv(frame):
                                     _, name, emp_id, dept = valid_known_encodings[max_idx]
                                     
                                     # Check cooldown and process recognition
-                                    status = process_recognition(name, emp_id, dept, current_time, frame, scaled_bbox)
+                                    status = process_recognition(name, emp_id, dept, current_time, frame, scaled_bbox, entry_type)
                                     
                                     results.append({
                                         "name": name,
@@ -1046,17 +1193,20 @@ def recognize_faces_cctv(frame):
         return []
                 
                 
-def process_recognition(name, emp_id, dept, current_time, frame, bbox):
-    """Enhanced recognition processing with single-camera session management"""
+def process_recognition(name, emp_id, dept, current_time, frame, bbox, entry_type="CHECK_IN"):
+    """Enhanced recognition processing with dual-camera session management"""
     global employee_checked_in_status, employee_last_checkout
     
     try:
         # Check if employee is currently checked in
         is_checked_in = employee_checked_in_status.get(name, False)
         
-        # Check cooldown period (1 minute for single-camera testing)
-        if name not in last_recognition_time or \
-           (current_time - last_recognition_time[name]) > CCTVAttendanceConfig.RECOGNITION_COOLDOWN:
+        # Check cooldown period - DISABLED for dual camera mode
+        cooldown_expired = (CCTVAttendanceConfig.RECOGNITION_COOLDOWN == 0.0 or 
+                           name not in last_recognition_time or 
+                           (current_time - last_recognition_time[name]) > CCTVAttendanceConfig.RECOGNITION_COOLDOWN)
+        
+        if cooldown_expired:
             
             # Track consecutive detections for confirmation
             consecutive_detections[name] = consecutive_detections.get(name, 0) + 1
@@ -1064,30 +1214,45 @@ def process_recognition(name, emp_id, dept, current_time, frame, bbox):
             # Confirm recognition after consecutive detections
             if consecutive_detections[name] >= CCTVAttendanceConfig.MIN_CONSECUTIVE_DETECTIONS:
                 
-                if not is_checked_in:  # Person is not currently checked in
-                    # Mark as CHECK-IN
-                    if name not in today_attendance:
-                        today_attendance.add(name)
-                    
-                    employee_checked_in_status[name] = True
-                    mark_attendance_cctv(name, emp_id, dept, frame, bbox, entry_type="CHECK_IN")
-                    last_recognition_time[name] = current_time
-                    consecutive_detections[name] = 0
-                    
-                    print(f"✅ CHECK-IN: {name} is now checked in (Auto-checkout in 1 min, then can check-in again)")
-                    return "checked_in"
-                else:
-                    # Person is already checked in - within cooldown period
-                    print(f"⏳ {name} already checked in - auto-checkout in progress (1 min cycle)")
-                    return "already_checked_in"
+                # Handle dual camera logic based on entry_type
+                if entry_type == "CHECK_IN":
+                    if not is_checked_in:  # Person is not currently checked in
+                        # Mark as CHECK-IN
+                        if name not in today_attendance:
+                            today_attendance.add(name)
+                        
+                        employee_checked_in_status[name] = True
+                        mark_attendance_cctv(name, emp_id, dept, frame, bbox, entry_type="CHECK_IN")
+                        last_recognition_time[name] = current_time
+                        consecutive_detections[name] = 0
+                        
+                        print(f"✅ CHECK-IN: {name} is now checked in")
+                        return "checked_in"
+                    else:
+                        # Person is already checked in
+                        print(f"ℹ️ {name} already checked in")
+                        return "already_checked_in"
+                        
+                elif entry_type == "CHECK_OUT":
+                    if is_checked_in:  # Person is currently checked in
+                        # Mark as CHECK-OUT
+                        employee_checked_in_status[name] = False
+                        mark_attendance_cctv(name, emp_id, dept, frame, bbox, entry_type="CHECK_OUT")
+                        last_recognition_time[name] = current_time
+                        consecutive_detections[name] = 0
+                        
+                        print(f"✅ CHECK-OUT: {name} has checked out")
+                        return "checked_out"
+                    else:
+                        # Person is not checked in, cannot check out
+                        print(f"⚠️ {name} cannot check out - not currently checked in")
+                        return "not_checked_in"
             else:
                 return "confirming"
         else:
-            # Still in cooldown period
-            remaining_time = CCTVAttendanceConfig.RECOGNITION_COOLDOWN - (current_time - last_recognition_time[name])
-            if remaining_time > 60:
-                print(f"⏱️ {name} cooldown: {remaining_time/60:.1f} minutes remaining")
-            else:
+            # Cooldown active (should not happen in dual camera mode with RECOGNITION_COOLDOWN = 0.0)
+            if CCTVAttendanceConfig.RECOGNITION_COOLDOWN > 0:
+                remaining_time = CCTVAttendanceConfig.RECOGNITION_COOLDOWN - (current_time - last_recognition_time[name])
                 print(f"⏱️ {name} cooldown: {remaining_time:.0f} seconds remaining")
             return "cooldown"
             
@@ -1244,21 +1409,24 @@ def manual_checkout_employee(name):
         return False
 
 def auto_checkout_after_1_minute():
-    """Automatically checkout employees after exactly 1 minute of check-in for continuous cycle"""
-    current_datetime = datetime.now()
-    
-    for name, is_checked_in in employee_checked_in_status.items():
-        if is_checked_in and name in employee_time_entries:
-            # Find the most recent check-in
-            checkin_entries = [e for e in employee_time_entries[name] if e['entry_type'] == 'CHECK_IN']
-            if checkin_entries:
-                last_checkin = checkin_entries[-1]
-                time_since_checkin = current_datetime - last_checkin['datetime']
-                
-                # Auto-checkout after exactly 1 minute (60 seconds)
-                if time_since_checkin.total_seconds() >= 60:
-                    print(f"⏰ AUTO-CHECKOUT: {name} worked for 1 minute - enabling next check-in")
-                    manual_checkout_employee(name)
+    """DISABLED: Auto-checkout replaced with mobile camera detection for dual camera mode"""
+    # Auto-checkout is disabled in dual camera mode - checkout only happens via mobile camera
+    if CCTVAttendanceConfig.ENABLE_AUTO_CHECKOUT:
+        current_datetime = datetime.now()
+        
+        for name, is_checked_in in employee_checked_in_status.items():
+            if is_checked_in and name in employee_time_entries:
+                # Find the most recent check-in
+                checkin_entries = [e for e in employee_time_entries[name] if e['entry_type'] == 'CHECK_IN']
+                if checkin_entries:
+                    last_checkin = checkin_entries[-1]
+                    time_since_checkin = current_datetime - last_checkin['datetime']
+                    
+                    # Auto-checkout after exactly 1 minute (60 seconds)
+                    if time_since_checkin.total_seconds() >= 60:
+                        print(f"⏰ AUTO-CHECKOUT: {name} worked for 1 minute - enabling next check-in")
+                        manual_checkout_employee(name)
+    # If auto-checkout is disabled, do nothing - wait for mobile camera checkout
 
 def auto_checkout_all_employees():
     """Auto checkout all employees at end of day"""
@@ -1275,22 +1443,7 @@ def auto_checkout_all_employees():
         if checked_in_employees:
             print(f"✅ Auto-checkout completed for {len(checked_in_employees)} employees")
 
-def auto_checkout_after_1_minute():
-    """Automatically checkout employees after exactly 1 minute of check-in for continuous cycle"""
-    current_datetime = datetime.now()
-    
-    for name, is_checked_in in employee_checked_in_status.items():
-        if is_checked_in and name in employee_time_entries:
-            # Find the most recent check-in
-            checkin_entries = [e for e in employee_time_entries[name] if e['entry_type'] == 'CHECK_IN']
-            if checkin_entries:
-                last_checkin = checkin_entries[-1]
-                time_since_checkin = current_datetime - last_checkin['datetime']
-                
-                # Auto-checkout after exactly 1 minute (60 seconds)
-                if time_since_checkin.total_seconds() >= 60:
-                    print(f"⏰ AUTO-CHECKOUT: {name} worked for 1 minute - enabling next check-in")
-                    manual_checkout_employee(name)
+# Duplicate function removed - using single auto_checkout_after_1_minute function above
 
 def display_checked_in_employees():
     """Display currently checked-in employees"""
@@ -1685,19 +1838,44 @@ def cctv_attendance_system():
     print("� STARTING CCTV MONITORING...")
     print(f"{'='*60}")
     
-    # Test CCTV connection
-    cap, video_props = test_cctv_connection()
-    if cap is None:
-        print("❌ Cannot establish video connection. Exiting...")
+    # Setup Dual Camera System
+    print("\n" + "="*60)
+    print("🎥🎥 DUAL CAMERA SYSTEM SETUP")
+    print("="*60)
+    
+    # Configure cameras
+    CCTVAttendanceConfig.CHECKIN_CAMERA_URL = CCTVAttendanceConfig.RTSP_URL
+    
+    # Test both cameras
+    cameras, camera_mode = test_dual_camera_connection()
+    
+    if camera_mode == "FAILED":
+        print("❌ Cannot establish any camera connection. Exiting...")
         return
+    elif camera_mode == "DUAL":
+        print("🎉 DUAL CAMERA SYSTEM READY!")
+        print("   📥 CHECK_IN: CCTV Camera")
+        print("   📤 CHECK_OUT: Mobile IP WebCam")
+    else:
+        print(f"⚠️ Running in {camera_mode} mode")
     
+    # Set primary camera for display
+    if cameras['checkin'][0] is not None:
+        cap, video_props = cameras['checkin']
+        camera_name = "CHECK_IN Camera (CCTV)"
+    else:
+        cap, video_props = cameras['checkout']
+        camera_name = "CHECK_OUT Camera (IP WebCam)"
+        
     width, height, fps = video_props
-    print(f"✅ Video source connected: {width}x{height} @ {fps} FPS")
+    print(f"✅ Primary display: {camera_name} - {width}x{height} @ {fps} FPS")
     
-    print("\n🎥 Starting Enhanced CCTV Attendance & Time Tracking...")
-    print("📋 Enhanced Instructions:")
-    print(f"⏰ Auto-cycle: 1 minute (Check-in → Auto-checkout → Can check-in again)")
-    print(f"🔄 Auto-checkout: 6 PM")
+    print("\n🎥 Starting Dual Camera Attendance System...")
+    print("📋 IMPORTANT INSTRUCTIONS:")
+    print(f"   � CHECK_IN: Stand in front of CCTV camera")
+    print(f"   📤 CHECK_OUT: Stand in front of mobile phone camera")
+    print(f"   🔄 No auto-checkout - Use mobile camera to checkout!")
+    print(f"   � Daily auto-checkout: 6 PM")
     print("\n🎮 ESSENTIAL CONTROLS:")
     if GUI_AVAILABLE:
         print("   'O' - Manual checkout menu")
@@ -1721,26 +1899,92 @@ def cctv_attendance_system():
     
     try:
         while True:
-            ret, frame = cap.read()
+            # DUAL CAMERA PROCESSING
+            frames = {}
+            all_results = []
             
-            # Handle connection loss
-            if not ret or frame is None:
+            # Ensure camera_mode is defined (fallback)
+            if 'camera_mode' not in locals():
+                camera_mode = "SINGLE_LEGACY"
+                cameras = {'checkin': (cap, video_props), 'checkout': (None, (0, 0, 0))}
+            
+            if camera_mode in ["DUAL", "SINGLE_CHECKIN", "SINGLE_LEGACY"]:
+                # Process CHECK_IN camera (primary display)
+                checkin_cap = cameras['checkin'][0]
+                if checkin_cap is not None:
+                    ret_in, frame_in = checkin_cap.read()
+                    if ret_in and frame_in is not None:
+                        frames['checkin'] = frame_in
+                        frame = frame_in  # Primary display frame
+                        
+                        # Process CHECK_IN faces
+                        if frame_count % CCTVAttendanceConfig.PROCESS_EVERY_N_FRAMES == 0:
+                            results_in = recognize_faces_cctv(frame_in, entry_type="CHECK_IN")
+                            all_results.extend(results_in)
+                    else:
+                        # Handle CHECK_IN camera connection loss
+                        frame = np.zeros((height, width, 3), dtype=np.uint8)
+                        cv2.putText(frame, "CHECK_IN CAMERA DISCONNECTED", (50, height//2), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+            
+            if camera_mode == "DUAL":
+                # Process CHECK_OUT camera (background processing)
+                checkout_cap = cameras['checkout'][0]
+                if checkout_cap is not None:
+                    ret_out, frame_out = checkout_cap.read()
+                    if ret_out and frame_out is not None:
+                        frames['checkout'] = frame_out
+                        
+                        # Process CHECK_OUT faces
+                        if frame_count % CCTVAttendanceConfig.PROCESS_EVERY_N_FRAMES == 0:
+                            results_out = recognize_faces_cctv(frame_out, entry_type="CHECK_OUT")
+                            all_results.extend(results_out)
+                            
+                            # Print checkout detections to console for debugging
+                            if results_out:
+                                print(f"🔍 CHECK_OUT Camera: {len(results_out)} detections")
+                                for result in results_out:
+                                    if result.get("name", "unknown") != "unknown":
+                                        print(f"  📤 {result['name']} detected at checkout camera")
+            
+            elif camera_mode == "SINGLE_CHECKOUT":
+                # Only CHECK_OUT camera available
+                checkout_cap = cameras['checkout'][0]
+                if checkout_cap is not None:
+                    ret_out, frame_out = checkout_cap.read()
+                    if ret_out and frame_out is not None:
+                        frames['checkout'] = frame_out
+                        frame = frame_out  # Use as primary display
+                        
+                        # Process CHECK_OUT faces
+                        if frame_count % CCTVAttendanceConfig.PROCESS_EVERY_N_FRAMES == 0:
+                            results_out = recognize_faces_cctv(frame_out, entry_type="CHECK_OUT")
+                            all_results.extend(results_out)
+            
+            elif camera_mode == "SINGLE_LEGACY":
+                # Legacy single camera mode (fallback)
+                ret, frame = cap.read()
+                if ret and frame is not None:
+                    # Process single camera with CHECK_IN logic
+                    if frame_count % CCTVAttendanceConfig.PROCESS_EVERY_N_FRAMES == 0:
+                        results_legacy = recognize_faces_cctv(frame, entry_type="CHECK_IN")
+                        all_results.extend(results_legacy)
+                else:
+                    frame = np.zeros((height, width, 3), dtype=np.uint8)
+                    cv2.putText(frame, "CAMERA DISCONNECTED", (50, height//2), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+            
+            # Handle connection loss for primary display
+            if 'frame' not in locals() or frame is None:
                 current_time = time.time()
                 if CCTVAttendanceConfig.AUTO_RECONNECT and \
                    (current_time - last_connection_attempt) > CCTVAttendanceConfig.CONNECTION_RETRY_INTERVAL:
                     
-                    print("📡 Connection lost. Attempting to reconnect...")
-                    cap.release()
-                    cap, video_props = test_cctv_connection()
+                    print("📡 Camera connection lost. Attempting to reconnect...")
                     last_connection_attempt = current_time
-                    
-                    if cap is None:
-                        print("❌ Reconnection failed. Retrying in 5 seconds...")
-                        time.sleep(5)
-                        continue
-                    else:
-                        print("✅ Reconnected successfully!")
-                        continue
+                    frame = np.zeros((height, width, 3), dtype=np.uint8)
+                    cv2.putText(frame, "RECONNECTING...", (width//2-100, height//2), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
                 else:
                     continue
             
@@ -1752,19 +1996,18 @@ def cctv_attendance_system():
                 current_fps = 30 / elapsed if elapsed > 0 else 0
                 fps_start_time = time.time()
                 
-                # Check for 1-minute auto-checkout (every 30 frames ≈ every second)
-                auto_checkout_after_1_minute()
+                # Auto-checkout DISABLED for dual camera mode
+                # auto_checkout_after_1_minute()  # DISABLED - Use mobile camera for checkout
             
             # Resize frame to standard size for consistent processing
             if frame.shape[1] != width or frame.shape[0] != height:
                 frame = cv2.resize(frame, (width, height))
             
-            # Process every N frames for performance
-            if frame_count % CCTVAttendanceConfig.PROCESS_EVERY_N_FRAMES == 0:
-                results = recognize_faces_cctv(frame)
-                
-                # Draw results on frame
-                for result in results:
+            # Use results from dual camera processing
+            results = all_results
+            
+            # Draw results on frame
+            for result in results:
                     bbox = result["bbox"]
                     name = result["name"]
                     confidence = result["confidence"]
