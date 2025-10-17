@@ -1,0 +1,3 @@
+Name,Employee_ID,Department,Date,Time,Full_Timestamp,Screenshot_Path,Entry_Type,Source
+yaseen,1170,AI&DS,2025-10-14,17:33:07,2025-10-14 17:33:07,attendance_records\check_in_yaseen_2025-10-14_17-33-07_1.jpg,CHECK_IN,CCTV
+yaseen,1170,AI&DS,2025-10-14,17:33:44,2025-10-14 17:33:44,attendance_records\check_out_yaseen_2025-10-14_17-33-44_2.jpg,CHECK_OUT,CCTV

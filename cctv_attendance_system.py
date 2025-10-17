@@ -37,9 +37,9 @@ class CCTVAttendanceConfig:
     CHECKIN_CAMERA_URL = "rtsp://admin:AK@MrA!4501$uf@192.168.0.109:554/cam/realmonitor?channel=8&subtype=0"
     CHECKIN_CAMERA_TYPE = "RTSP"  # RTSP, HTTP, USB
     
-    # Secondary Camera (CHECK_OUT) - IP WebCam Mobile Phone
-    CHECKOUT_CAMERA_URL = "http://192.168.0.180:8080/video"  # Your IP WebCam URL
-    CHECKOUT_CAMERA_TYPE = "HTTP"  # IP WebCam uses HTTP/HTTPS
+    # Secondary Camera (CHECK_OUT) - Second CCTV Camera
+    CHECKOUT_CAMERA_URL = "rtsp://admin:admin@777@192.168.0.135:554/cam/realmonitor?channel=1&subtype=0"
+    CHECKOUT_CAMERA_TYPE = "RTSP"  # RTSP for CCTV camera
     
     # Legacy RTSP URL (for backward compatibility)
     RTSP_URL = "rtsp://admin:AK@MrA!4501$uf@192.168.0.109:554/cam/realmonitor?channel=8&subtype=0"
@@ -1078,14 +1078,16 @@ def recognize_faces_cctv(frame, entry_type="CHECK_IN"):
                         "department": dept,
                         "confidence": float(max_similarity),
                         "bbox": bbox,
-                        "status": status
+                        "status": status,
+                        "entry_type": entry_type  # Add entry_type to track which camera
                     })
                 else:
                     results.append({
                         "name": "unknown",
                         "confidence": 0,
                         "bbox": bbox,
-                        "status": "unknown"
+                        "status": "unknown",
+                        "entry_type": entry_type  # Add entry_type to track which camera
                     })
                     
         elif (active_model in ["retinaface", "balanced"]) and face_embeddings and known_face_encodings:
@@ -2046,20 +2048,72 @@ def cctv_attendance_system():
                     cv2.putText(frame, label, (x1 + 5, y1 - 5), 
                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
             
-            # Display statistics and FPS
+            # Display statistics and FPS on CHECK-IN frame
             display_cctv_statistics(frame)
             cv2.putText(frame, f"FPS: {current_fps:.1f}", (frame.shape[1] - 150, 60), 
                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
             
             # Display system title with model info
             model_info = f" ({active_model.upper()})"
-            cv2.putText(frame, f"CCTV ATTENDANCE SYSTEM{model_info}", 
-                       (10, frame.shape[0] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            cv2.putText(frame, f"CHECK-IN CAMERA{model_info}", 
+                       (10, frame.shape[0] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
             
             # Display frame if GUI available
             if GUI_AVAILABLE:
                 try:
-                    cv2.imshow('CCTV Office Attendance System', frame)
+                    # Show CHECK-IN camera in its own window (maximized)
+                    checkin_window = '📥 CHECK-IN Camera - Entry Door'
+                    cv2.namedWindow(checkin_window, cv2.WINDOW_NORMAL)
+                    cv2.setWindowProperty(checkin_window, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+                    cv2.imshow(checkin_window, frame)
+                    
+                    # If dual camera mode, show CHECK-OUT camera in separate window
+                    if camera_mode == "DUAL" and 'checkout' in frames and frames['checkout'] is not None:
+                        frame_out = frames['checkout'].copy()
+                        
+                        # Add statistics to checkout frame
+                        display_cctv_statistics(frame_out)
+                        cv2.putText(frame_out, f"FPS: {current_fps:.1f}", (frame_out.shape[1] - 150, 60), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+                        
+                        # Add title for checkout camera
+                        cv2.putText(frame_out, f"CHECK-OUT CAMERA{model_info}", 
+                                   (10, frame_out.shape[0] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                        
+                        # Draw bounding boxes for CHECK_OUT detections
+                        for result in all_results:
+                            if result.get("entry_type") == "CHECK_OUT":
+                                bbox = result["bbox"]
+                                name = result["name"]
+                                confidence = result["confidence"]
+                                status = result.get("status", "unknown")
+                                
+                                # Color coding based on status
+                                if status == "checked_out":
+                                    color = (0, 0, 255)  # Red for checked out
+                                    label = f"{name} - CHECKED OUT"
+                                elif status == "not_checked_in":
+                                    color = (0, 165, 255)  # Orange - not checked in yet
+                                    label = f"{name} - NOT CHECKED IN"
+                                else:
+                                    color = (255, 0, 0)  # Blue
+                                    label = f"{name} ({confidence:.2f})"
+                                
+                                x1, y1, x2, y2 = bbox
+                                cv2.rectangle(frame_out, (x1, y1), (x2, y2), color, 3)
+                                
+                                # Draw label with background
+                                label_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)[0]
+                                cv2.rectangle(frame_out, (x1, y1 - label_size[1] - 15), 
+                                             (x1 + label_size[0] + 10, y1), color, -1)
+                                cv2.putText(frame_out, label, (x1 + 5, y1 - 5), 
+                                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+                        
+                        # Show CHECK-OUT camera in separate window (maximized)
+                        checkout_window = '📤 CHECK-OUT Camera - Exit Door'
+                        cv2.namedWindow(checkout_window, cv2.WINDOW_NORMAL)
+                        cv2.setWindowProperty(checkout_window, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+                        cv2.imshow(checkout_window, frame_out)
                     
                     # Handle key presses
                     key = cv2.waitKey(1) & 0xFF

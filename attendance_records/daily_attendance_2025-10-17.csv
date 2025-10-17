@@ -1,0 +1,11 @@
+Name,Employee_ID,Department,Date,Time,Full_Timestamp,Screenshot_Path,Entry_Type,Source
+sajj,9876,AI&DS,2025-10-17,15:15:11,2025-10-17 15:15:11,attendance_records\check_in_sajj_2025-10-17_15-15-11_1.jpg,CHECK_IN,CCTV
+sajj,9876,AI&DS,2025-10-17,15:15:22,2025-10-17 15:15:22,attendance_records\check_out_sajj_2025-10-17_15-15-22_2.jpg,CHECK_OUT,CCTV
+sajj,9876,AI&DS,2025-10-17,15:27:39,2025-10-17 15:27:39,attendance_records\check_in_sajj_2025-10-17_15-27-39_3.jpg,CHECK_IN,CCTV
+sajj,9876,AI&DS,2025-10-17,15:28:34,2025-10-17 15:28:34,attendance_records\check_out_sajj_2025-10-17_15-28-34_4.jpg,CHECK_OUT,CCTV
+sajj,9876,AI&DS,2025-10-17,15:58:15,2025-10-17 15:58:15,attendance_records\check_in_sajj_2025-10-17_15-58-15_1.jpg,CHECK_IN,CCTV
+sajj,9876,AI&DS,2025-10-17,15:58:48,2025-10-17 15:58:48,attendance_records\check_out_sajj_2025-10-17_15-58-48_2.jpg,CHECK_OUT,CCTV
+yaseen,1170,AI&DS,2025-10-17,17:41:44,2025-10-17 17:41:44,attendance_records\check_in_yaseen_2025-10-17_17-41-44_1.jpg,CHECK_IN,CCTV
+yaseen,1170,AI&DS,2025-10-17,17:42:04,2025-10-17 17:42:04,attendance_records\check_out_yaseen_2025-10-17_17-42-04_2.jpg,CHECK_OUT,CCTV
+sajj,9876,AI&DS,2025-10-17,17:42:52,2025-10-17 17:42:52,attendance_records\check_in_sajj_2025-10-17_17-42-52_3.jpg,CHECK_IN,CCTV
+sajj,9876,AI&DS,2025-10-17,17:42:59,2025-10-17 17:42:59,attendance_records\check_out_sajj_2025-10-17_17-42-59_4.jpg,CHECK_OUT,CCTV
