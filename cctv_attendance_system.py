@@ -34,15 +34,15 @@ class CCTVAttendanceConfig:
     
     # DUAL CAMERA CONNECTION SETTINGS
     # Primary Camera (CHECK_IN) - Existing CCTV
-    CHECKIN_CAMERA_URL = "rtsp://admin:AK@MrA!4501$uf@192.168.0.109:554/cam/realmonitor?channel=8&subtype=0"
+    CHECKIN_CAMERA_URL = "rtsp://admin:admin%40777@49.207.177.255:5543/cam/realmonitor?channel=1&subtype=0"
     CHECKIN_CAMERA_TYPE = "RTSP"  # RTSP, HTTP, USB
     
     # Secondary Camera (CHECK_OUT) - Second CCTV Camera
-    CHECKOUT_CAMERA_URL = "rtsp://admin:admin@777@192.168.0.135:554/cam/realmonitor?channel=1&subtype=0"
+    CHECKOUT_CAMERA_URL = "rtsp://admin:admin%40777@49.207.177.255:5543/cam/realmonitor?channel=2&subtype=0"
     CHECKOUT_CAMERA_TYPE = "RTSP"  # RTSP for CCTV camera
     
     # Legacy RTSP URL (for backward compatibility)
-    RTSP_URL = "rtsp://admin:AK@MrA!4501$uf@192.168.0.109:554/cam/realmonitor?channel=8&subtype=0"
+    RTSP_URL = "rtsp://admin:admin%40777@49.207.177.255:5543/cam/realmonitor?channel=1&subtype=0"
     ALTERNATIVE_URLS = []  # Add backup URLs if needed
     
     # Dual Camera Configuration
